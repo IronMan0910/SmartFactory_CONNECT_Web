@@ -1,0 +1,49 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Docker
+docker-compose.override.yml
+
+# Backups
+backups/
+*.sql
+*.sql.gz
+!backend/src/database/exports/seed_data.sql
+!backend/src/database/schema.sql
+!backend/src/database/schema_room_booking.sql
+
+# Large AI Models (use Git LFS or download separately)
+rag_service/phobert_v6_denso_onnx_compressed/
+rag_service/**/*.onnx
+rag_service/**/*.bin
+rag_service/**/*.pt
+rag_service/**/*.pth
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Testing
+coverage
+.nyc_output
+
+docs/
+docs/*
+**/docs/
+
+.DS_Store
+
+.env
+.env.local
+.env.production*.onnx
+__pycache__/
+*.pyc
