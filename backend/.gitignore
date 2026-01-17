@@ -40,3 +40,7 @@ src/database/restore_*.ps1
 
 # Firebase Service Account
 firebase-service-account.json
+
+# Secure folder (keys, certs)
+secure/*
+!secure/.gitkeep

@@ -18,7 +18,8 @@ const initializeFirebaseAdmin = () => {
         const path = require('path');
         const fs = require('fs');
 
-        const serviceAccountPath = path.join(__dirname, '../../firebase-service-account.json');
+        // Check for key in secure folder
+        const serviceAccountPath = path.join(__dirname, '../../secure/firebase-service-account.json');
 
         if (!fs.existsSync(serviceAccountPath)) {
             console.warn('FCM: firebase-service-account.json not found. Push notifications disabled.');
