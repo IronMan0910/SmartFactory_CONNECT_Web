@@ -101,7 +101,9 @@
     "active": "Hoạt động",
     "inactive": "Ngừng hoạt động",
     "new": "Mới",
-    "completed": "Hoàn thành"
+    "completed": "Hoàn thành",
+    "implemented": "Đã triển khai",
+    "under_review": "Đang xem xét"
   },
   "priority": {
     "low": "Thấp",
@@ -879,6 +881,7 @@
     "saving": "Đang lưu...",
     "save_success": "Đã lưu độ khó thành công",
     "save_error": "Lưu thất bại",
-    "no_change": "Không có thay đổi"
+    "no_change": "Không có thay đổi",
+    "readonly_note": "Độ khó đã được đánh giá và không thể thay đổi"
   }
 }
