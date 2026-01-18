@@ -882,6 +882,7 @@
     "save_success": "Đã lưu độ khó thành công",
     "save_error": "Lưu thất bại",
     "no_change": "Không có thay đổi",
-    "readonly_note": "Độ khó đã được đánh giá và không thể thay đổi"
+    "readonly_note": "Độ khó đã được đánh giá và không thể thay đổi",
+    "required_for_approve": "Vui lòng chọn độ khó trước khi duyệt"
   }
 }

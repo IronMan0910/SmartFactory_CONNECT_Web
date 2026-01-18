@@ -83,9 +83,9 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
 
     try {
       setSavingDifficulty(true);
-      
+
       console.log('Current idea.status:', idea.status);
-      
+
       // Map frontend status to backend status
       // Backend accepts: 'under_review', 'approved', 'rejected', 'implemented', 'on_hold'
       const statusMap: Record<string, string> = {
@@ -98,20 +98,20 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
         'on_hold': 'on_hold'
       };
       const backendStatus = statusMap[idea.status] || 'under_review';
-      
+
       console.log('Mapped backend status:', backendStatus);
-      
+
       const payload = {
         status: backendStatus,
         review_notes: `Updated difficulty to ${difficulty}`,
         difficulty: difficulty
       };
-      
+
       console.log('Saving difficulty:', payload);
       const response = await api.put(`/ideas/${idea.id}/review`, payload);
       console.log('Save difficulty response:', response.data);
       toast.success(t('difficulty.save_success'));
-      
+
       // Refresh data to get updated history
       if (onRefresh) {
         onRefresh();
@@ -140,6 +140,12 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
   };
 
   const handleApprove = () => {
+    // Bắt buộc chọn độ khó trước khi duyệt
+    if (!difficulty) {
+      toast.error(t('difficulty.required_for_approve') || 'Vui lòng chọn độ khó trước khi duyệt');
+      return;
+    }
+
     const note = solution?.note || solutionInput || t('status.approved');
     const updatedSolution = { note, status: t('status.approved') };
     setSolution(updatedSolution);
@@ -183,18 +189,17 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
         </div>
         <div className="flex items-center gap-2">
           {/* Status Badge - Always show current status */}
-          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-            idea.status === 'approved' || idea.status === 'implemented'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : idea.status === 'rejected'
+          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${idea.status === 'approved' || idea.status === 'implemented'
+            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+            : idea.status === 'rejected'
               ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
               : idea.status === 'under_review'
-              ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-              : 'bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-gray-300'
-          }`}>
+                ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                : 'bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-gray-300'
+            }`}>
             {t(`status.${idea.status}`) || idea.status}
           </span>
-          
+
           {/* Approve/Reject buttons - Only show when status allows */}
           {canApproveReject && (
             <>
@@ -212,7 +217,7 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
               </button>
             </>
           )}
-          
+
           {/* Forward button - Only show when status allows */}
           {showForwardButton && canForward && (
             <button
@@ -226,7 +231,7 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
       </div>
 
       {/* NỘI DUNG (Khu vực có thể cuộn) */}
-      <div 
+      <div
         ref={scrollContainerRef}
         className="overflow-y-auto flex-1 bg-gray-50 dark:bg-neutral-900"
       >
@@ -240,6 +245,8 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
             }}
             loading={false}
             compact={false}
+            difficulty={difficulty}
+            requireDifficultyForApproval={true}
           />
 
           {/* Nội dung chính */}
@@ -260,8 +267,8 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
               <h3 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white mb-4">
                 <Paperclip size={18} /> Đính kèm ({idea.attachments.length})
               </h3>
-              <MediaViewer 
-                attachments={idea.attachments} 
+              <MediaViewer
+                attachments={idea.attachments}
                 baseUrl={import.meta.env.VITE_API_URL || 'http://localhost:3000'}
               />
             </div>
@@ -294,49 +301,48 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
 
           {/* ĐỀ XUẤT HƯỚNG GIẢI QUYẾT - Only show when can still take action */}
           {canApproveReject && (
-          <div className="bg-white dark:bg-neutral-800 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-neutral-700">
-            <label className="block mb-3 font-semibold text-gray-900 dark:text-white">
-              {t('idea.solution_proposal')}
-            </label>
+            <div className="bg-white dark:bg-neutral-800 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-neutral-700">
+              <label className="block mb-3 font-semibold text-gray-900 dark:text-white">
+                {t('idea.solution_proposal')}
+              </label>
 
-            {!solution ? (
-              <div className="flex gap-2 items-start">
-                <div className="flex-1">
-                  <TextArea
-                    value={solutionInput}
-                    onChange={(value) => setSolutionInput(value)}
-                    rows={3}
-                    placeholder={t('idea.solution_placeholder')}
-                    enableSpeech={true}
-                    className="bg-gray-50 dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
-                  />
+              {!solution ? (
+                <div className="flex gap-2 items-start">
+                  <div className="flex-1">
+                    <TextArea
+                      value={solutionInput}
+                      onChange={(value) => setSolutionInput(value)}
+                      rows={3}
+                      placeholder={t('idea.solution_placeholder')}
+                      enableSpeech={true}
+                      className="bg-gray-50 dark:bg-neutral-900 dark:text-white dark:border-neutral-700"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSendSolution}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 transition-colors h-fit mt-1"
+                  >
+                    <Send size={16} /> {t('button.submit')}
+                  </button>
                 </div>
-                <button
-                  onClick={handleSendSolution}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 transition-colors h-fit mt-1"
-                >
-                  <Send size={16} /> {t('button.submit')}
-                </button>
-              </div>
-            ) : (
-              <div className="p-4 border-l-4 border-red-600 bg-red-50 dark:bg-red-900/20 rounded-r-lg flex justify-between items-start">
-                <p className="text-gray-700 dark:text-gray-300">
-                  {solution.note}
-                </p>
-                <span
-                  className={`ml-4 font-semibold text-sm px-3 py-1 rounded-full ${
-                    solution.status === t('status.pending')
+              ) : (
+                <div className="p-4 border-l-4 border-red-600 bg-red-50 dark:bg-red-900/20 rounded-r-lg flex justify-between items-start">
+                  <p className="text-gray-700 dark:text-gray-300">
+                    {solution.note}
+                  </p>
+                  <span
+                    className={`ml-4 font-semibold text-sm px-3 py-1 rounded-full ${solution.status === t('status.pending')
                       ? "text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30"
                       : solution.status === t('status.approved')
-                      ? "text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30"
-                      : "text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30"
-                  }`}
-                >
-                  {solution.status}
-                </span>
-              </div>
-            )}
-          </div>
+                        ? "text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30"
+                        : "text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30"
+                      }`}
+                  >
+                    {solution.status}
+                  </span>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Lịch sử hành động */}

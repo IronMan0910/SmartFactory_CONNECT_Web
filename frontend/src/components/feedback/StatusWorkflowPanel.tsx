@@ -19,15 +19,16 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { useTranslation } from "../../contexts/LanguageContext";
+import { toast } from "react-toastify";
 
 // Status types
-type WorkflowStatus = 
-  | 'pending' 
-  | 'under_review' 
-  | 'forwarded' 
-  | 'department_responded' 
-  | 'coordinator_reviewing' 
-  | 'published' 
+type WorkflowStatus =
+  | 'pending'
+  | 'under_review'
+  | 'forwarded'
+  | 'department_responded'
+  | 'coordinator_reviewing'
+  | 'published'
   | 'need_revision'
   | 'approved'
   | 'rejected'
@@ -52,6 +53,8 @@ interface StatusWorkflowPanelProps {
   responseCount?: number;
   loading?: boolean;
   compact?: boolean;
+  difficulty?: string; // Current difficulty level
+  requireDifficultyForApproval?: boolean; // If true, require difficulty before approving
 }
 
 // Define workflows for different types
@@ -179,8 +182,10 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
   responseCount = 0,
   loading = false,
   compact = false,
+  difficulty,
+  requireDifficultyForApproval = false,
 }) => {
-  const { language } = useTranslation();
+  const { t, language } = useTranslation();
   const [expanded, setExpanded] = useState(!compact);
   const [updating, setUpdating] = useState(false);
   const [quickNote, setQuickNote] = useState('');
@@ -214,7 +219,13 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
   // Handle status update
   const handleUpdateStatus = async (newStatus: string) => {
     if (!onStatusChange || updating) return;
-    
+
+    // Validate: Bắt buộc chọn độ khó trước khi duyệt (approved)
+    if (requireDifficultyForApproval && newStatus === 'approved' && !difficulty) {
+      toast.error(t('difficulty.required_for_approve') || 'Vui lòng chọn độ khó trước khi duyệt');
+      return;
+    }
+
     setUpdating(true);
     try {
       await onStatusChange(newStatus, quickNote || undefined);
@@ -231,10 +242,10 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
   const getNextStatuses = (): { status: string; label: string }[] => {
     const nextIndex = currentStepIndex + 1;
     if (nextIndex >= steps.length) return [];
-    
+
     const nextStep = steps[nextIndex];
     const statuses = Array.isArray(nextStep.status) ? nextStep.status : [nextStep.status];
-    
+
     return statuses.map(s => ({
       status: s,
       label: language === 'ja' ? nextStep.label.ja : nextStep.label.vi
@@ -247,7 +258,7 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
     // Compact view - just current status
     const currentStep = steps[currentStepIndex];
     return (
-      <div 
+      <div
         onClick={() => setExpanded(true)}
         className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${currentStep.bgColor} ${currentStep.borderColor} border`}
       >
@@ -271,7 +282,7 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
   return (
     <div className="bg-white dark:bg-neutral-800 rounded-xl border border-gray-200 dark:border-neutral-700 overflow-hidden">
       {/* Header */}
-      <div 
+      <div
         className="p-3 border-b border-gray-200 dark:border-neutral-700 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-700 transition-colors"
         onClick={() => compact && setExpanded(!expanded)}
       >
@@ -301,26 +312,24 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
             const isActive = index === currentStepIndex;
             const isCompleted = index < currentStepIndex;
             const isFuture = index > currentStepIndex;
-            
+
             return (
               <React.Fragment key={step.id}>
                 {/* Step Circle */}
                 <div className="flex flex-col items-center">
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                      isCompleted
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isCompleted
                         ? 'bg-green-500 text-white'
                         : isActive
-                        ? `${step.bgColor} ${step.color} ${step.borderColor} border-2`
-                        : 'bg-gray-100 dark:bg-neutral-700 text-gray-400 dark:text-gray-500'
-                    }`}
+                          ? `${step.bgColor} ${step.color} ${step.borderColor} border-2`
+                          : 'bg-gray-100 dark:bg-neutral-700 text-gray-400 dark:text-gray-500'
+                      }`}
                   >
                     {isCompleted ? <CheckCircle2 size={20} /> : step.icon}
                   </div>
                   <span
-                    className={`mt-2 text-xs font-medium text-center max-w-[80px] ${
-                      isActive ? step.color : isCompleted ? 'text-green-600 dark:text-green-400' : 'text-gray-400'
-                    }`}
+                    className={`mt-2 text-xs font-medium text-center max-w-[80px] ${isActive ? step.color : isCompleted ? 'text-green-600 dark:text-green-400' : 'text-gray-400'
+                      }`}
                   >
                     {language === 'ja' ? step.label.ja : step.label.vi}
                   </span>
@@ -330,11 +339,10 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
                 {index < steps.length - 1 && (
                   <div className="flex-1 mx-2">
                     <div
-                      className={`h-1 rounded-full transition-colors ${
-                        isCompleted
+                      className={`h-1 rounded-full transition-colors ${isCompleted
                           ? 'bg-green-500'
                           : 'bg-gray-200 dark:bg-neutral-600'
-                      }`}
+                        }`}
                     />
                   </div>
                 )}
@@ -347,8 +355,8 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
         {steps[currentStepIndex]?.description && (
           <div className={`mt-4 p-3 rounded-lg ${steps[currentStepIndex].bgColor} ${steps[currentStepIndex].borderColor} border`}>
             <p className={`text-sm ${steps[currentStepIndex].color}`}>
-              {language === 'ja' 
-                ? steps[currentStepIndex].description.ja 
+              {language === 'ja'
+                ? steps[currentStepIndex].description.ja
                 : steps[currentStepIndex].description.vi}
             </p>
           </div>
@@ -365,7 +373,7 @@ export const StatusWorkflowPanel: React.FC<StatusWorkflowPanelProps> = ({
                 onClick={() => setShowQuickUpdate(!showQuickUpdate)}
                 className="text-xs text-red-600 dark:text-red-400 hover:underline"
               >
-                {showQuickUpdate 
+                {showQuickUpdate
                   ? (language === 'ja' ? '閉じる' : 'Đóng')
                   : (language === 'ja' ? 'メモを追加' : 'Thêm ghi chú')}
               </button>
