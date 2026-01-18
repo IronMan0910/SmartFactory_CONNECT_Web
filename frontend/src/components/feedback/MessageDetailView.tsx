@@ -18,6 +18,7 @@ import { DifficultyBadge, DifficultySelector } from "./DifficultySelector";
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import { StatusWorkflowPanel } from "./StatusWorkflowPanel";
+import MediaViewer from "../common/MediaViewer";
 
 interface Department {
   id: string;
@@ -257,10 +258,23 @@ export const MessageDetailView: React.FC<MessageDetailViewProps> = ({
 
           <div className="bg-white dark:bg-neutral-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-neutral-700">
             <p className="text-base leading-relaxed text-gray-700 dark:text-gray-300">{message.fullContent}</p>
-            {message.imageUrl && (
+            
+            {/* Media Attachments - Images, Videos, Audio */}
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mt-4">
+                <MediaViewer 
+                  attachments={message.attachments} 
+                  baseUrl=""
+                />
+              </div>
+            )}
+            
+            {/* Fallback for legacy imageUrl only */}
+            {!message.attachments?.length && message.imageUrl && (
               <img
                 src={message.imageUrl}
                 className="max-w-lg rounded-lg mt-4 border border-gray-200 dark:border-neutral-600"
+                alt="Attachment"
               />
             )}
           </div>
