@@ -100,12 +100,37 @@ export default function PublicIdeasPage() {
         title: item.title,
         content: item.description,
         difficulty: item.difficulty,
+        // Parse attachments with full URL
+        attachments: (() => {
+          if (!item.attachments) return undefined;
+          try {
+            const att = typeof item.attachments === 'string' ? JSON.parse(item.attachments) : item.attachments;
+            if (Array.isArray(att) && att.length > 0) {
+              const baseUrl = import.meta.env.VITE_API_URL?.replace("/api", "") || "";
+              return att.map((a: any) => ({
+                file_id: a.file_id || a.fileId,
+                filename: a.filename,
+                original_name: a.original_name || a.originalName,
+                mime_type: a.mime_type || a.mimeType,
+                size: a.size,
+                path: a.path,
+                url: a.path ? `${baseUrl}/${a.path}` : (a.url || ''),
+              }));
+            }
+          } catch (e) {
+            console.error("Error parsing attachments", e);
+          }
+          return undefined;
+        })(),
         imageUrl: (() => {
           if (!item.attachments) return undefined;
           try {
             const att = typeof item.attachments === 'string' ? JSON.parse(item.attachments) : item.attachments;
-            if (Array.isArray(att) && att.length > 0 && att[0].path) {
-              return `${import.meta.env.VITE_API_URL?.replace('/api', '')}/${att[0].path}`;
+            if (Array.isArray(att) && att.length > 0) {
+              const imgAtt = att.find((a: any) => a.mime_type?.startsWith('image/'));
+              if (imgAtt && imgAtt.path) {
+                return `${import.meta.env.VITE_API_URL?.replace('/api', '')}/${imgAtt.path}`;
+              }
             }
           } catch (e) {
             console.error("Error parsing attachments", e);
