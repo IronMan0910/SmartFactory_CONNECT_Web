@@ -20,7 +20,16 @@ interface MediaViewerProps {
 
 const getFullUrl = (url: string, baseUrl: string = ''): string => {
   if (url.startsWith('http')) return url;
-  return `${baseUrl}${url}`;
+
+  // Remove trailing slash from baseUrl
+  let cleanBaseUrl = baseUrl.replace(/\/$/, '');
+
+  // If url starts with /api and baseUrl ends with /api, avoid duplicate
+  if (url.startsWith('/api') && cleanBaseUrl.endsWith('/api')) {
+    cleanBaseUrl = cleanBaseUrl.replace(/\/api$/, '');
+  }
+
+  return `${cleanBaseUrl}${url}`;
 };
 
 const getAttachmentType = (attachment: Attachment): 'image' | 'video' | 'audio' | 'other' => {
@@ -170,7 +179,7 @@ const VideoPlayer: React.FC<{
           onEnded={() => setIsPlaying(false)}
           onError={() => setError(true)}
         />
-        
+
         {/* Play overlay */}
         {!isPlaying && (
           <div
@@ -183,7 +192,7 @@ const VideoPlayer: React.FC<{
           </div>
         )}
       </div>
-      
+
       {/* Controls */}
       <div className="bg-gray-900 p-3">
         <div className="flex items-center gap-3">
@@ -197,7 +206,7 @@ const VideoPlayer: React.FC<{
               <Play size={20} className="text-white" />
             )}
           </button>
-          
+
           <div className="flex-1">
             <input
               type="range"
@@ -208,11 +217,11 @@ const VideoPlayer: React.FC<{
               className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-500"
             />
           </div>
-          
+
           <span className="text-white text-xs min-w-[80px] text-center">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
-          
+
           <button
             onClick={toggleMute}
             className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
@@ -224,7 +233,7 @@ const VideoPlayer: React.FC<{
             )}
           </button>
         </div>
-        
+
         <div className="mt-2 flex items-center gap-2">
           <Video size={14} className="text-gray-400" />
           <span className="text-gray-400 text-xs truncate">{title}</span>
@@ -307,7 +316,7 @@ const AudioPlayer: React.FC<{
         onEnded={() => setIsPlaying(false)}
         onError={() => setError(true)}
       />
-      
+
       <div className="flex items-center gap-4">
         <button
           onClick={togglePlay}
@@ -319,7 +328,7 @@ const AudioPlayer: React.FC<{
             <Play size={24} className="text-white ml-1" />
           )}
         </button>
-        
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <Mic size={14} className="text-orange-600 dark:text-orange-400 flex-shrink-0" />
@@ -327,7 +336,7 @@ const AudioPlayer: React.FC<{
               {title}
             </span>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -365,7 +374,7 @@ const ImageModal: React.FC<{
       if (e.key === 'ArrowLeft') onPrevious();
       if (e.key === 'ArrowRight') onNext();
     };
-    
+
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose, onPrevious, onNext]);
@@ -379,14 +388,14 @@ const ImageModal: React.FC<{
       >
         <X size={24} className="text-white" />
       </button>
-      
+
       {/* Counter */}
       <div className="absolute top-4 left-4 px-3 py-1 bg-white/10 rounded-full z-10">
         <span className="text-white text-sm">
           {currentIndex + 1} / {images.length}
         </span>
       </div>
-      
+
       {/* Navigation */}
       {images.length > 1 && (
         <>
@@ -404,14 +413,14 @@ const ImageModal: React.FC<{
           </button>
         </>
       )}
-      
+
       {/* Image */}
       <img
         src={url}
         alt={currentImage.original_name || currentImage.originalName || 'Image'}
         className="max-w-[90vw] max-h-[90vh] object-contain"
       />
-      
+
       {/* Download button */}
       <a
         href={url}
