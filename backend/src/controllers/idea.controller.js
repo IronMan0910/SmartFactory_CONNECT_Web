@@ -40,8 +40,133 @@ const autoTranslate = async (text, fieldName = 'text') => {
 };
 
 /**
+ * Background async processing for idea (translation + file upload)
+ * This function runs AFTER response is sent to client
+ */
+const processIdeaAsync = async (ideaId, data, files, submitterId) => {
+  console.log(`[ProcessIdeaAsync] Starting background processing for idea ${ideaId}`);
+  
+  try {
+    const {
+      title,
+      title_ja,
+      description,
+      description_ja,
+      expected_benefit,
+      expected_benefit_ja,
+    } = data;
+
+    // ===== AUTO-TRANSLATE: Vietnamese ↔ Japanese =====
+    let finalTitleJa = title_ja;
+    let finalTitle = title;
+    let finalDescriptionJa = description_ja;
+    let finalDescription = description;
+    let finalExpectedBenefitJa = expected_benefit_ja;
+    let finalExpectedBenefit = expected_benefit;
+
+    // Auto-translate title
+    if (title && !title_ja) {
+      const titleResult = await autoTranslate(title, 'title');
+      if (titleResult.originalLang === 'ja') {
+        finalTitleJa = title;
+        finalTitle = titleResult.translated || title;
+      } else {
+        finalTitleJa = titleResult.translated;
+      }
+    } else if (title_ja && !title) {
+      const titleResult = await autoTranslate(title_ja, 'title');
+      finalTitle = titleResult.translated || title_ja;
+      finalTitleJa = title_ja;
+    }
+
+    // Auto-translate description
+    if (description && !description_ja) {
+      const descResult = await autoTranslate(description, 'description');
+      if (descResult.originalLang === 'ja') {
+        finalDescriptionJa = description;
+        finalDescription = descResult.translated || description;
+      } else {
+        finalDescriptionJa = descResult.translated;
+      }
+    } else if (description_ja && !description) {
+      const descResult = await autoTranslate(description_ja, 'description');
+      finalDescription = descResult.translated || description_ja;
+      finalDescriptionJa = description_ja;
+    }
+
+    // Auto-translate expected_benefit
+    if (expected_benefit && !expected_benefit_ja) {
+      const benefitResult = await autoTranslate(expected_benefit, 'expected_benefit');
+      if (benefitResult.originalLang === 'ja') {
+        finalExpectedBenefitJa = expected_benefit;
+        finalExpectedBenefit = benefitResult.translated || expected_benefit;
+      } else {
+        finalExpectedBenefitJa = benefitResult.translated;
+      }
+    } else if (expected_benefit_ja && !expected_benefit) {
+      const benefitResult = await autoTranslate(expected_benefit_ja, 'expected_benefit');
+      finalExpectedBenefit = benefitResult.translated || expected_benefit_ja;
+      finalExpectedBenefitJa = expected_benefit_ja;
+    }
+
+    console.log(`[ProcessIdeaAsync] Auto-translated: title=${!!finalTitleJa}, desc=${!!finalDescriptionJa}, benefit=${!!finalExpectedBenefitJa}`);
+
+    // Upload files to MongoDB GridFS
+    let attachments = [];
+    if (files && files.length > 0) {
+      attachments = await uploadFilesToGridFS(files, {
+        type: 'idea',
+        relatedType: 'idea',
+        uploadedBy: submitterId,
+      });
+      
+      // Update files with idea ID (for linking)
+      if (attachments.length > 0) {
+        const fileIds = attachments.map(a => a.file_id);
+        await updateFilesRelatedId(fileIds, ideaId, 'idea');
+      }
+    }
+
+    // Update idea with translated content and attachments
+    const updateQuery = `
+      UPDATE ideas SET
+        title = COALESCE($1, title),
+        title_ja = COALESCE($2, title_ja),
+        description = COALESCE($3, description),
+        description_ja = COALESCE($4, description_ja),
+        expected_benefit = COALESCE($5, expected_benefit),
+        expected_benefit_ja = COALESCE($6, expected_benefit_ja),
+        attachments = $7,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $8
+    `;
+
+    await db.query(updateQuery, [
+      finalTitle,
+      finalTitleJa,
+      finalDescription,
+      finalDescriptionJa,
+      finalExpectedBenefit,
+      finalExpectedBenefitJa,
+      JSON.stringify(attachments),
+      ideaId
+    ]);
+
+    console.log(`[ProcessIdeaAsync] Completed background processing for idea ${ideaId}`);
+  } catch (error) {
+    console.error(`[ProcessIdeaAsync] Error processing idea ${ideaId}:`, error);
+    // Don't throw - this is background processing, log error and continue
+  }
+};
+
+/**
  * Create new idea
  * POST /api/ideas
+ * 
+ * ASYNC PROCESSING: 
+ * - Creates idea immediately with original content
+ * - Returns response to client right away (no waiting)
+ * - Translation and file upload happen in background
  */
 const createIdea = asyncHandler(async (req, res) => {
   const {
@@ -60,75 +185,6 @@ const createIdea = asyncHandler(async (req, res) => {
 
   const submitter_id = req.user.id;
 
-  // ===== AUTO-TRANSLATE: Vietnamese ↔ Japanese =====
-  // If user provides only one language, auto-translate to the other
-  let finalTitle = title;
-  let finalTitleJa = title_ja;
-  let finalDescription = description;
-  let finalDescriptionJa = description_ja;
-  let finalExpectedBenefit = expected_benefit;
-  let finalExpectedBenefitJa = expected_benefit_ja;
-
-  // Auto-translate title
-  if (title && !title_ja) {
-    const titleResult = await autoTranslate(title, 'title');
-    if (titleResult.originalLang === 'ja') {
-      // Input is Japanese, swap and translate to Vietnamese
-      finalTitleJa = title;
-      finalTitle = titleResult.translated || title;
-    } else {
-      // Input is Vietnamese, translate to Japanese
-      finalTitleJa = titleResult.translated;
-    }
-  } else if (title_ja && !title) {
-    const titleResult = await autoTranslate(title_ja, 'title');
-    finalTitle = titleResult.translated || title_ja;
-    finalTitleJa = title_ja;
-  }
-
-  // Auto-translate description
-  if (description && !description_ja) {
-    const descResult = await autoTranslate(description, 'description');
-    if (descResult.originalLang === 'ja') {
-      finalDescriptionJa = description;
-      finalDescription = descResult.translated || description;
-    } else {
-      finalDescriptionJa = descResult.translated;
-    }
-  } else if (description_ja && !description) {
-    const descResult = await autoTranslate(description_ja, 'description');
-    finalDescription = descResult.translated || description_ja;
-    finalDescriptionJa = description_ja;
-  }
-
-  // Auto-translate expected_benefit
-  if (expected_benefit && !expected_benefit_ja) {
-    const benefitResult = await autoTranslate(expected_benefit, 'expected_benefit');
-    if (benefitResult.originalLang === 'ja') {
-      finalExpectedBenefitJa = expected_benefit;
-      finalExpectedBenefit = benefitResult.translated || expected_benefit;
-    } else {
-      finalExpectedBenefitJa = benefitResult.translated;
-    }
-  } else if (expected_benefit_ja && !expected_benefit) {
-    const benefitResult = await autoTranslate(expected_benefit_ja, 'expected_benefit');
-    finalExpectedBenefit = benefitResult.translated || expected_benefit_ja;
-    finalExpectedBenefitJa = expected_benefit_ja;
-  }
-
-  console.log(`[CreateIdea] Auto-translated: title=${!!finalTitleJa}, desc=${!!finalDescriptionJa}, benefit=${!!finalExpectedBenefitJa}`);
-  // ===== END AUTO-TRANSLATE =====
-
-  // Upload files to MongoDB GridFS
-  let attachments = [];
-  if (req.files && req.files.length > 0) {
-    attachments = await uploadFilesToGridFS(req.files, {
-      type: 'idea',
-      relatedType: 'idea',
-      uploadedBy: submitter_id,
-    });
-  }
-
   // For Pink Box (anonymous), we still store submitter_id but mark as anonymous
   const is_anonymous = ideabox_type === 'pink';
 
@@ -138,18 +194,17 @@ const createIdea = asyncHandler(async (req, res) => {
   const handler_level = ideabox_type === 'pink' ? 3 : 1;
 
   // Determine whitebox_subtype for White Box if not provided
-  // Default: use category to determine - process improvement categories are 'idea', others are 'opinion'
   let finalWhiteboxSubtype = null;
   if (ideabox_type === 'white') {
     if (whitebox_subtype) {
       finalWhiteboxSubtype = whitebox_subtype;
     } else {
-      // Auto-determine based on category
       const ideaCategories = ['process_improvement', 'cost_reduction', 'safety_enhancement', 'quality_improvement'];
       finalWhiteboxSubtype = ideaCategories.includes(category) ? 'idea' : 'opinion';
     }
   }
 
+  // ===== SYNC: Create idea immediately with original content =====
   const query = `
     INSERT INTO ideas (
       ideabox_type,
@@ -176,16 +231,16 @@ const createIdea = asyncHandler(async (req, res) => {
     ideabox_type,
     finalWhiteboxSubtype,
     category,
-    finalTitle,
-    finalTitleJa || null,
-    finalDescription,
-    finalDescriptionJa || null,
-    finalExpectedBenefit || null,
-    finalExpectedBenefitJa || null,
+    title,           // Original title (will be translated async)
+    title_ja || null,
+    description,     // Original description (will be translated async)
+    description_ja || null,
+    expected_benefit || null,
+    expected_benefit_ja || null,
     submitter_id,
     department_id || null,
     is_anonymous,
-    JSON.stringify(attachments),
+    JSON.stringify([]), // Empty attachments (will be uploaded async)
     handler_level,
     difficulty || null
   ];
@@ -193,32 +248,33 @@ const createIdea = asyncHandler(async (req, res) => {
   const result = await db.query(query, values);
   const idea = result.rows[0];
 
-  // Update files with idea ID (for linking)
-  if (attachments.length > 0) {
-    const fileIds = attachments.map(a => a.file_id);
-    setImmediate(() => {
-      updateFilesRelatedId(fileIds, idea.id, 'idea');
-    });
-  }
-
-  // Log history
+  // Log history (sync - quick operation)
   await db.query(
     `INSERT INTO idea_history (idea_id, action, performed_by, details)
      VALUES ($1, 'submitted', $2, $3)`,
     [idea.id, submitter_id, JSON.stringify({ status: 'pending', ideabox_type })]
   );
 
-  // If Pink Box, assign to Admin
-  // If White Box, assign to Supervisor
-  let assignedRole = ideabox_type === 'pink' ? 'admin' : 'supervisor';
-
-  // TODO: Send notification to assigned role
-
   // Hide submitter info if anonymous
   if (is_anonymous && req.user.level > 1) {
     delete idea.submitter_id;
   }
 
+  // ===== ASYNC: Process translation and file upload in background =====
+  // Use setImmediate to not block response
+  const filesForProcessing = req.files ? [...req.files] : [];
+  setImmediate(() => {
+    processIdeaAsync(idea.id, {
+      title,
+      title_ja,
+      description,
+      description_ja,
+      expected_benefit,
+      expected_benefit_ja,
+    }, filesForProcessing, submitter_id);
+  });
+
+  // Return immediately - don't wait for translation/upload
   res.status(201).json({
     success: true,
     message: 'Idea submitted successfully',
