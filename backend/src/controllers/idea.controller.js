@@ -274,6 +274,21 @@ const createIdea = asyncHandler(async (req, res) => {
     }, filesForProcessing, submitter_id);
   });
 
+  // Send notification to Supervisor/Admin about new idea
+  const pushNotificationService = req.app.get('pushNotificationService');
+  if (pushNotificationService) {
+    setImmediate(async () => {
+      try {
+        await pushNotificationService.sendIdeaCreatedNotification(
+          idea,
+          req.user.full_name || 'Nhân viên'
+        );
+      } catch (err) {
+        console.error('[Idea] Error sending new idea notification:', err.message);
+      }
+    });
+  }
+
   // Return immediately - don't wait for translation/upload
   res.status(201).json({
     success: true,
@@ -868,7 +883,21 @@ const reviewIdea = asyncHandler(async (req, res) => {
     [id, userId, JSON.stringify(historyDetails)]
   );
 
-  // TODO: Send notification to submitter
+  // Send notification to submitter about status change
+  const pushNotificationService = req.app.get('pushNotificationService');
+  if (pushNotificationService && idea.rows[0].submitter_id && oldStatus !== status) {
+    setImmediate(async () => {
+      try {
+        await pushNotificationService.sendIdeaStatusChangedNotification(
+          result.rows[0],
+          oldStatus,
+          status
+        );
+      } catch (err) {
+        console.error('[Idea] Error sending review notification:', err.message);
+      }
+    });
+  }
 
   res.json({
     success: true,
@@ -916,7 +945,21 @@ const implementIdea = asyncHandler(async (req, res) => {
     [id, userId, JSON.stringify({ implementation_notes, actual_benefit, actual_benefit_ja: actual_benefit_ja || null })]
   );
 
-  // TODO: Send notification to submitter with congratulations
+  // Send notification to submitter about implementation
+  const pushNotificationService = req.app.get('pushNotificationService');
+  if (pushNotificationService && idea.rows[0].submitter_id) {
+    setImmediate(async () => {
+      try {
+        await pushNotificationService.sendIdeaStatusChangedNotification(
+          result.rows[0],
+          idea.rows[0].status,
+          'implemented'
+        );
+      } catch (err) {
+        console.error('[Idea] Error sending implementation notification:', err.message);
+      }
+    });
+  }
 
   res.json({
     success: true,
@@ -1063,7 +1106,20 @@ const escalateIdea = asyncHandler(async (req, res) => {
     [id, userId, `Escalated to ${nextLevel}. Reason: ${reason || 'No reason provided'}`]
   );
 
-  // TODO: Send notification to escalated_to user
+  // Send notification to users at the escalated level (Manager/GM)
+  const pushNotificationService = req.app.get('pushNotificationService');
+  if (pushNotificationService) {
+    setImmediate(async () => {
+      try {
+        await pushNotificationService.sendIdeaCreatedNotification(
+          { ...result.rows[0], title: `[Escalated] ${result.rows[0].title}` },
+          req.user.full_name || 'Người xử lý'
+        );
+      } catch (err) {
+        console.error('[Idea] Error sending escalation notification:', err.message);
+      }
+    });
+  }
 
   res.json({
     success: true,
