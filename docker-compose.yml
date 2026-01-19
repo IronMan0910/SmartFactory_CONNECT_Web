@@ -257,16 +257,24 @@ services:
           memory: 512M
 
 # ========== CLOUDFLARE TUNNEL ==========
-  # Exposes backend to public internet via Cloudflare
-  # URL will be shown in container logs: docker logs smartfactory_tunnel
+  # Exposes services to public internet via Cloudflare Zero Trust
+  # Setup:
+  #   1. Truy cập https://one.dash.cloudflare.com -> Zero Trust -> Networks -> Tunnels
+  #   2. Tạo tunnel mới, copy TUNNEL_TOKEN
+  #   3. Thêm vào .env: TUNNEL_TOKEN=<your-token>
+  #   4. Trong dashboard, cấu hình Public Hostname:
+  #      - api.yourdomain.com -> http://backend:3000
+  #      - yourdomain.com -> http://frontend:80
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: smartfactory_tunnel
     restart: unless-stopped
     depends_on:
-      backend:
-        condition: service_healthy
-    command: tunnel --no-autoupdate --url http://backend:3000
+      - backend
+      - frontend
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
     networks:
       - smartfactory_network
     # Resource limits
