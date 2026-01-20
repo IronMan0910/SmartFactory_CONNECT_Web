@@ -505,7 +505,8 @@ const getIdeas = asyncHandler(async (req, res) => {
       END as submitter_code,
       d.name as department_name,
       a.full_name as assigned_to_name,
-      r.full_name as reviewed_by_name
+      r.full_name as reviewed_by_name,
+      (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $${paramIndex} LIMIT 1) as "satisfactionRating"
     FROM ideas i
     LEFT JOIN users u ON i.submitter_id = u.id
     LEFT JOIN departments d ON i.department_id = d.id
@@ -613,7 +614,9 @@ const getIdeaById = asyncHandler(async (req, res) => {
       END as submitter_email,
       d.name as department_name,
       a.full_name as assigned_to_name,
-      r.full_name as reviewed_by_name
+      r.full_name as reviewed_by_name,
+      (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $2 LIMIT 1) as "satisfactionRating",
+      (SELECT ir.feedback FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $2 LIMIT 1) as "satisfactionComment"
     FROM ideas i
     LEFT JOIN users u ON i.submitter_id = u.id
     LEFT JOIN departments d ON i.department_id = d.id
@@ -1632,8 +1635,9 @@ const submitRating = asyncHandler(async (req, res) => {
  */
 const getRating = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
-  const rating = await ratingService.getIdeaRating(id);
+  const rating = await ratingService.getIdeaRating(id, userId);
 
   res.json({
     success: true,

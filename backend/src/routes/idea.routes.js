@@ -218,7 +218,7 @@ const addResponseValidation = [
 const reviewIdeaValidation = [
   param('id').isUUID().withMessage('Invalid idea ID'),
   body('status')
-    .isIn(['under_review', 'approved', 'rejected', 'implemented', 'on_hold'])
+    .isIn(['under_review', 'approved', 'rejected', 'implemented', 'on_hold', 'in_progress'])
     .withMessage('Invalid status'),
   body('review_notes')
     .optional()
@@ -658,7 +658,7 @@ router.post(
   [
     param('id').isUUID().withMessage('Invalid idea ID'),
     body('overall_rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be 1-5'),
-    body('feedback').optional().isString()
+    body('feedback').optional({ nullable: true }).isString()
   ],
   validate,
   ideaController.submitRating
