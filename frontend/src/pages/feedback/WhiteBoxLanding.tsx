@@ -478,45 +478,58 @@ export default function WhiteBoxLanding() {
 
       <div className="h-[calc(100vh-4rem)] w-full flex flex-col bg-gray-50 dark:bg-neutral-900 overflow-hidden">
         {/* Header */}
-        <div className="shrink-0 p-4 bg-white dark:bg-neutral-800 border-b border-gray-200 dark:border-neutral-700">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl text-white shadow-lg">
-                <Lightbulb size={24} />
+        <div className="shrink-0 px-4 py-3 bg-white dark:bg-neutral-800 border-b border-gray-200 dark:border-neutral-700">
+          <div className="flex items-center justify-between gap-6">
+            {/* Title Part */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="p-2 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl text-white shadow-md">
+                <Lightbulb size={20} />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">
                   {language === "ja" ? "ホワイトボックス" : "Hòm thư Trắng"}
                 </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
                   {language === "ja"
                     ? "アイデアと意見の管理"
-                    : "Quản lý ý tưởng và ý kiến cải tiến"}
+                    : "Quản lý ý tưởng và ý kiến"}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Stats Part - Compact Mode */}
+            <div className="flex-1 max-w-4xl">
+              <FeedbackStatsCards
+                stats={stats}
+                boxType="white"
+                activeFilter={statusFilter}
+                onFilterChange={setStatusFilter}
+                compact={true}
+              />
+            </div>
+
+            {/* Action Buttons Part */}
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => fetchData()}
                 disabled={refreshing}
-                className="p-2 rounded-lg border border-gray-300 dark:border-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
+                className="p-1.5 rounded-lg border border-gray-300 dark:border-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
               >
                 <RefreshCw
-                  size={18}
+                  size={16}
                   className={`text-gray-600 dark:text-gray-400 ${refreshing ? "animate-spin" : ""
                     }`}
                 />
               </button>
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className={`p-2 rounded-lg border transition-colors ${showFilters
+                className={`p-1.5 rounded-lg border transition-colors ${showFilters
                   ? "bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700"
                   : "border-gray-300 dark:border-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-700"
                   }`}
               >
                 <SlidersHorizontal
-                  size={18}
+                  size={16}
                   className={
                     showFilters
                       ? "text-red-600 dark:text-red-400"
@@ -526,14 +539,6 @@ export default function WhiteBoxLanding() {
               </button>
             </div>
           </div>
-
-          {/* Stats Cards */}
-          <FeedbackStatsCards
-            stats={stats}
-            boxType="white"
-            activeFilter={statusFilter}
-            onFilterChange={setStatusFilter}
-          />
 
           {/* Search and Filters */}
           {showFilters && (
@@ -758,6 +763,7 @@ export default function WhiteBoxLanding() {
                   showForwardButton={isNotAdmin}
                   departments={departments}
                   onRefresh={() => fetchData(false)}
+                  showApproveRejectButtons={false}
                 />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
@@ -779,6 +785,7 @@ export default function WhiteBoxLanding() {
                 showForwardButton={isNotAdmin}
                 departments={departments}
                 onRefresh={() => fetchData(false)}
+                showApproveRejectButtons={false}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">

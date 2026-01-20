@@ -222,7 +222,7 @@ export default function PublicIdeasPage() {
 
       // Refresh to get updated data from server including history
       await fetchIdeas(false);
-      
+
       toast.success(t('feedback.messages.update_status_success'));
     } catch (error: any) {
       console.error("Update status failed:", error);
@@ -295,6 +295,7 @@ export default function PublicIdeasPage() {
             showForwardButton={isNotAdmin}
             departments={departments}
             onRefresh={() => fetchIdeas(false)}
+            showApproveRejectButtons={false}
           />
         )}
       </div>

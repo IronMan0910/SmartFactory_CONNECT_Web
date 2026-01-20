@@ -34,6 +34,7 @@ interface IdeaDetailProps {
   remindCount?: number;
   onSupport?: () => void;
   onRemind?: () => void;
+  showApproveRejectButtons?: boolean;
 }
 
 export const IdeaDetail: React.FC<IdeaDetailProps> = ({
@@ -47,6 +48,7 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
   remindCount = 0,
   onSupport,
   onRemind,
+  showApproveRejectButtons = true,
 }) => {
   const { t, language } = useTranslation();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -214,8 +216,8 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
             {t(`status.${idea.status}`) || idea.status}
           </span>
 
-          {/* Approve/Reject buttons - Only show when status allows */}
-          {canApproveReject && (
+          {/* Approve/Reject buttons - Only show when status allows and prop is true */}
+          {canApproveReject && showApproveRejectButtons && (
             <>
               <button
                 onClick={handleApprove}

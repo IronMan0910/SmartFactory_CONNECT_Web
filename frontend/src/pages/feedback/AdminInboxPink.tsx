@@ -446,28 +446,40 @@ export default function SensitiveInboxPageV2() {
       <div className="h-[calc(100vh-4rem)] w-full flex flex-col bg-gray-50 dark:bg-neutral-900 overflow-hidden">
         {/* Header */}
         <div className="shrink-0 p-4 bg-white dark:bg-neutral-800 border-b border-gray-200 dark:border-neutral-700">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-3 shrink-0">
               <div className="p-2.5 bg-gradient-to-br from-red-600 to-red-500 rounded-xl text-white shadow-lg">
                 <Shield size={24} />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+              <div className="hidden sm:block">
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
                   {language === "ja" ? "ピンクボックス" : "Pink Box"}
                 </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   {language === "ja"
-                    ? "匿名フィードバックの処理"
-                    : "Xử lý ý kiến ẩn danh và phối hợp phòng ban"}
+                    ? "匿名フィードバック"
+                    : "Xử lý ý kiến ẩn danh"}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Stats Cards - Integrated into header row */}
+            <div className="flex-1 overflow-hidden">
+              <FeedbackStatsCards
+                stats={stats}
+                boxType="pink"
+                activeFilter={statusFilter}
+                onFilterChange={setStatusFilter}
+                compact={true}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => fetchIdeas()}
                 disabled={refreshing}
                 className="p-2 rounded-lg border border-gray-300 dark:border-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
+                title={language === "ja" ? "更新" : "Làm mới"}
               >
                 <RefreshCw
                   size={18}
@@ -481,6 +493,7 @@ export default function SensitiveInboxPageV2() {
                   ? "bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700"
                   : "border-gray-300 dark:border-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-700"
                   }`}
+                title={language === "ja" ? "フィルター" : "Bộ lọc"}
               >
                 <SlidersHorizontal
                   size={18}
@@ -493,14 +506,6 @@ export default function SensitiveInboxPageV2() {
               </button>
             </div>
           </div>
-
-          {/* Stats Cards */}
-          <FeedbackStatsCards
-            stats={stats}
-            boxType="pink"
-            activeFilter={statusFilter}
-            onFilterChange={setStatusFilter}
-          />
 
           {/* Search and Filters */}
           {showFilters && (

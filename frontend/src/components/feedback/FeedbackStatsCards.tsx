@@ -30,6 +30,7 @@ interface FeedbackStatsCardsProps {
   boxType: "white" | "pink";
   onFilterChange?: (filter: string) => void;
   activeFilter?: string;
+  compact?: boolean;
 }
 
 export const FeedbackStatsCards: React.FC<FeedbackStatsCardsProps> = ({
@@ -37,6 +38,7 @@ export const FeedbackStatsCards: React.FC<FeedbackStatsCardsProps> = ({
   boxType,
   onFilterChange,
   activeFilter = "all",
+  compact = false,
 }) => {
   const { language } = useTranslation();
 
@@ -113,7 +115,7 @@ export const FeedbackStatsCards: React.FC<FeedbackStatsCardsProps> = ({
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 mb-4">
+    <div className={`${compact ? 'flex flex-row flex-1 items-stretch' : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'} gap-2 ${!compact && 'mb-4'}`}>
       {cards.map((card) => {
         const Icon = card.icon;
         const isActive = activeFilter === card.id;
@@ -122,42 +124,45 @@ export const FeedbackStatsCards: React.FC<FeedbackStatsCardsProps> = ({
             key={card.id}
             onClick={() => onFilterChange?.(card.id)}
             className={`
-              relative overflow-hidden rounded-xl p-4 text-left transition-all duration-200
+              relative overflow-hidden rounded-xl ${compact ? 'p-2 flex-1 min-w-0' : 'p-4'} text-left transition-all duration-200
               ${isActive
-                ? `${card.color} text-white shadow-lg scale-[1.02]`
+                ? `${card.color} text-white shadow-lg ${!compact && 'scale-[1.02]'}`
                 : "bg-white dark:bg-neutral-800 hover:shadow-md hover:scale-[1.01] border border-gray-200 dark:border-neutral-700"
               }
             `}
           >
             {/* Background decoration */}
-            <div
-              className={`absolute -right-4 -top-4 w-16 h-16 rounded-full ${isActive ? "bg-white/10" : card.iconBg
-                } blur-xl`}
-            />
+            {!compact && (
+              <div
+                className={`absolute -right-4 -top-4 w-16 h-16 rounded-full ${isActive ? "bg-white/10" : card.iconBg
+                  } blur-xl`}
+              />
+            )}
 
-            <div className="relative flex items-start justify-between">
+            <div className={`relative flex items-center justify-between ${compact ? 'gap-1' : ''}`}>
               <div>
                 <p
-                  className={`text-xs font-medium mb-1 ${isActive
-                      ? "text-white/80"
-                      : "text-gray-500 dark:text-gray-400"
+                  className={`${compact ? 'text-[10px] truncate' : 'text-xs'} font-medium ${compact ? '' : 'mb-0.5'} ${isActive
+                    ? "text-white/80"
+                    : "text-gray-500 dark:text-gray-400"
                     }`}
+                  title={card.label}
                 >
                   {card.label}
                 </p>
                 <p
-                  className={`text-2xl font-bold ${isActive ? "text-white" : "text-gray-900 dark:text-white"
+                  className={`${compact ? 'text-lg' : 'text-2xl'} font-bold leading-tight ${isActive ? "text-white" : "text-gray-900 dark:text-white"
                     }`}
                 >
                   {card.value}
                 </p>
               </div>
               <div
-                className={`p-2 rounded-lg ${isActive ? "bg-white/20" : card.iconBg
+                className={`${compact ? 'p-1' : 'p-2'} rounded-lg ${isActive ? "bg-white/20" : card.iconBg
                   }`}
               >
                 <Icon
-                  size={18}
+                  size={compact ? 14 : 18}
                   className={isActive ? "text-white" : card.iconColor}
                 />
               </div>
