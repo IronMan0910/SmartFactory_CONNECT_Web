@@ -647,6 +647,23 @@ router.post(
   ideaController.toggleLike
 );
 
+/**
+ * @route   POST /api/ideas/:id/rate
+ * @desc    Submit satisfaction rating for idea (by submitter)
+ * @access  Private (Submitter only)
+ */
+router.post(
+  '/:id/rate',
+  authenticate,
+  [
+    param('id').isUUID().withMessage('Invalid idea ID'),
+    body('overall_rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be 1-5'),
+    body('feedback').optional().isString()
+  ],
+  validate,
+  ideaController.submitRating
+);
+
 // =====================================================
 // PINK BOX WORKFLOW ROUTES (Hòm Hồng / ピンクボックス)
 // =====================================================

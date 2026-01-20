@@ -2526,6 +2526,8 @@ module.exports = {
   getStatusLabels,
   // Feature: Like Idea
   toggleLike,
+  // Feature: Satisfaction Rating
+  submitRating,
 };
 
 /**
