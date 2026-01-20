@@ -26,6 +26,7 @@ export type StatusType =
   | "under_review"
   | "assigned"
   | "approved"
+  | "in_progress"
   | "rejected"
   | "implemented"
   | "completed"

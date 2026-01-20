@@ -97,10 +97,12 @@ export default function WhiteBoxLanding() {
       pending: "new",
       under_review: "under_review",
       approved: "approved",
+      in_progress: "in_progress",
       rejected: "rejected",
       implemented: "implemented",
+      on_hold: "on_hold",
     };
-    return m[s] || "new";
+    return m[s] || s as StatusType;
   }, []);
 
   const mapToBackendStatus = (s: string) =>
@@ -110,7 +112,9 @@ export default function WhiteBoxLanding() {
     approved: "approved",
     rejected: "rejected",
     implemented: "implemented",
-  }[s] || "under_review");
+    in_progress: "in_progress",
+    on_hold: "on_hold",
+  }[s] || s);
 
   // Map item
   const mapItem = useCallback(
