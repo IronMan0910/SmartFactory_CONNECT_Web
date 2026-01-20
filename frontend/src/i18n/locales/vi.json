@@ -161,7 +161,12 @@
     "satisfaction_level": "Mức độ hài lòng",
     "satisfaction_comment": "Ghi chú đánh giá",
     "rated": "Đã đánh giá",
-    "stars": "sao"
+    "stars": "sao",
+    "delete_confirm": "Bạn có chắc chắn muốn xóa ý tưởng này? Hành động này không thể hoàn tác.",
+    "delete_title": "Xác nhận xóa ý tưởng",
+    "submitted": "đã gửi",
+    "delete_success": "Đã xóa ý tưởng thành công",
+    "delete_error": "Không thể xóa ý tưởng"
   },
   "news": {
     "post_button": "Đăng tin tức",

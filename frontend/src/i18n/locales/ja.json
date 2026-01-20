@@ -158,7 +158,12 @@
     "satisfaction_level": "満足度",
     "satisfaction_comment": "評価コメント",
     "rated": "評価済み",
-    "stars": "星"
+    "stars": "星",
+    "delete_confirm": "この提案を削除してもよろしいですか？この操作は取り消せません。",
+    "delete_title": "提案の削除確認",
+    "submitted": "を提出しました",
+    "delete_success": "提案を削除しました",
+    "delete_error": "提案の削除に失敗しました"
   },
   "news": {
     "post_button": "ニュース投稿",

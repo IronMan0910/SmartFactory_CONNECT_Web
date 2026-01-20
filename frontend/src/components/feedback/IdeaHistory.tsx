@@ -67,7 +67,7 @@ export const IdeaHistory: React.FC<IdeaHistoryProps> = ({
       // Handle initial creation log
       if (parsed.status && parsed.ideabox_type && !parsed.old_status) {
         const boxName = parsed.ideabox_type === 'white' ? t('idea.white_box') : t('idea.pink_box');
-        parts.push(`${t('booking.history_action.created')} ${boxName}`);
+        parts.push(`${t('idea.submitted')} ${boxName}`);
       }
 
       if (parsed.old_status && parsed.new_status) {
@@ -171,8 +171,8 @@ export const IdeaHistory: React.FC<IdeaHistoryProps> = ({
         {history.map((item, idx) => {
           // Format action name and icon
           const actionMap: Record<string, { label: string, icon: React.ReactNode, color: string }> = {
-            'submitted': { label: t('booking.history_action.created'), icon: <CheckCircle2 size={12} />, color: 'bg-green-500' },
-            'created': { label: t('booking.history_action.created'), icon: <CheckCircle2 size={12} />, color: 'bg-green-500' },
+            'submitted': { label: t('idea.submitted'), icon: <CheckCircle2 size={12} />, color: 'bg-green-500' },
+            'created': { label: t('idea.submitted'), icon: <CheckCircle2 size={12} />, color: 'bg-green-500' },
             'assigned': { label: t('status.assigned'), icon: <User size={12} />, color: 'bg-blue-500' },
             'reviewed': { label: t('status.under_review'), icon: <Info size={12} />, color: 'bg-amber-500' },
             'approved': { label: t('status.approved'), icon: <CheckCircle2 size={12} />, color: 'bg-emerald-500' },
@@ -205,7 +205,7 @@ export const IdeaHistory: React.FC<IdeaHistoryProps> = ({
           };
 
           const formattedNote = String(formatHistoryNote(item.note, departments) || '');
-          const isInitialSubmission = (item.action === 'submitted' || item.action === 'created') && formattedNote.includes(t('booking.history_action.created'));
+          const isInitialSubmission = (item.action === 'submitted' || item.action === 'created') && formattedNote.includes(t('idea.submitted'));
 
           return (
             <div key={idx} className="relative">
@@ -241,8 +241,8 @@ export const IdeaHistory: React.FC<IdeaHistoryProps> = ({
                           key={s}
                           size={16}
                           className={`${s <= ratingValue
-                              ? 'fill-amber-400 text-amber-400'
-                              : 'text-gray-200 dark:text-neutral-700'
+                            ? 'fill-amber-400 text-amber-400'
+                            : 'text-gray-200 dark:text-neutral-700'
                             }`}
                         />
                       ))}

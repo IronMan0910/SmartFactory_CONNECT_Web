@@ -5,8 +5,6 @@
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  ChevronLeft,
-  ChevronRight,
   Lightbulb,
   MessageSquareText,
   Search,
@@ -16,15 +14,13 @@ import {
   SlidersHorizontal,
   RefreshCw,
   Inbox,
-  Building2,
   Calendar,
 } from "lucide-react";
 import PageMeta from "../../components/common/PageMeta";
 import { useTranslation } from "../../contexts/LanguageContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSpeechToText } from "../../hooks/useSpeechToText";
-import { useSocket, useSocketRefresh } from "../../hooks/useSocket";
-import { SocketEvent } from "../../contexts/SocketContext";
+import { useSocket } from "../../hooks/useSocket";
 import { useDepartments } from "../../hooks/useDepartments";
 import api from "../../services/api";
 import { toast } from "react-toastify";
@@ -32,18 +28,9 @@ import { PublicIdea, StatusType } from "../../components/feedback/types";
 import { IdeaDetail } from "../../components/feedback/IdeaDetail";
 import { FeedbackStatsCards } from "../../components/feedback/FeedbackStatsCards";
 import { EnhancedIdeaCard } from "../../components/feedback/EnhancedIdeaCard";
-import { WorkflowTimeline, getWhiteBoxWorkflowSteps } from "../../components/feedback/WorkflowTimeline";
 
 // View mode
 type ViewMode = "split" | "idea" | "opinion";
-
-// Category mapping
-const ideaCategories = [
-  "process_improvement",
-  "cost_reduction",
-  "safety_enhancement",
-  "quality_improvement",
-];
 
 interface BackendIdea {
   id: string;
@@ -69,7 +56,7 @@ interface BackendIdea {
 
 export default function WhiteBoxLanding() {
   const { user } = useAuth();
-  const { t, language } = useTranslation();
+  const { language } = useTranslation();
   const { departments } = useDepartments();
   const isNotAdmin = user?.level !== 1;
 
@@ -228,8 +215,8 @@ export default function WhiteBoxLanding() {
         setRefreshing(true);
         const res = await api.get("/ideas?ideabox_type=white&limit=1000");
         const all = (res.data.data || []).map(mapItem);
-        setIdeas(all.filter((i: PublicIdea) => ideaCategories.includes(i.line)));
-        setOpinions(all.filter((i: PublicIdea) => !ideaCategories.includes(i.line)));
+        setIdeas(all.filter((i: PublicIdea) => i.whiteboxSubtype === 'idea'));
+        setOpinions(all.filter((i: PublicIdea) => i.whiteboxSubtype !== 'idea'));
       } catch (e) {
         console.error(e);
       } finally {
@@ -252,7 +239,7 @@ export default function WhiteBoxLanding() {
     console.log('[Socket] idea_created', data);
     try {
       const newItem = mapItem(data);
-      if (ideaCategories.includes(newItem.line)) {
+      if (newItem.whiteboxSubtype === 'idea') {
         setIdeas(prev => {
           if (prev.some(i => i.id === newItem.id)) return prev;
           return [newItem, ...prev];
@@ -302,18 +289,18 @@ export default function WhiteBoxLanding() {
   }), [handleIdeaCreated, handleIdeaUpdated, handleIdeaResponse]);
 
   // Real-time event handlers
-  const { isConnected, socket } = useSocket({
+  const { isConnected, emit } = useSocket({
     channels: socketChannels,
     events: socketEventsHandler
   });
 
   // Force subscribe logic
   useEffect(() => {
-    if (isConnected && socket) {
+    if (isConnected) {
       console.log('[WhiteBox] Connected. Force subscribing...');
-      socket.emit('subscribe_ideas');
+      emit('subscribe_ideas');
     }
-  }, [isConnected, socket]);
+  }, [isConnected, emit]);
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -756,10 +743,10 @@ export default function WhiteBoxLanding() {
               selectedIdea ? (
                 <IdeaDetail
                   idea={selectedIdea}
-                  onUpdateStatus={(s, n, _, d) =>
+                  onUpdateStatus={(s: string, n?: string, _?: string, d?: string) =>
                     handleUpdateStatus("idea", s, n, _, d)
                   }
-                  onSendChat={(txt) => handleSendChat("idea", txt)}
+                  onSendChat={(txt: string) => handleSendChat("idea", txt)}
                   showForwardButton={isNotAdmin}
                   departments={departments}
                   onRefresh={() => fetchData(false)}
@@ -783,10 +770,10 @@ export default function WhiteBoxLanding() {
             ) : selectedOpinion ? (
               <IdeaDetail
                 idea={selectedOpinion}
-                onUpdateStatus={(s, n, _, d) =>
+                onUpdateStatus={(s: string, n?: string, _?: string, d?: string) =>
                   handleUpdateStatus("opinion", s, n, _, d)
                 }
-                onSendChat={(txt) => handleSendChat("opinion", txt)}
+                onSendChat={(txt: string) => handleSendChat("opinion", txt)}
                 showForwardButton={isNotAdmin}
                 departments={departments}
                 onRefresh={() => fetchData(false)}

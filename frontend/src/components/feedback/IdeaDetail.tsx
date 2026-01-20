@@ -12,6 +12,7 @@ import { toast } from "react-toastify";
 import api from "../../services/api";
 import MediaViewer from "../common/MediaViewer";
 import { StatusWorkflowPanel } from "./StatusWorkflowPanel";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 
 interface Department {
   id: string;
@@ -60,6 +61,7 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
   const [difficulty, setDifficulty] = useState<DifficultyLevel | undefined>(idea.difficulty);
   const [savingDifficulty, setSavingDifficulty] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [solution, setSolution] = useState<{
     note: string;
     status: string;
@@ -71,7 +73,6 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
   const canApproveReject = ['new', 'pending', 'under_review'].includes(idea.status);
   const canForward = ['new', 'pending', 'under_review'].includes(idea.status);
   const canModifyDifficulty = !['implemented', 'rejected'].includes(idea.status);
-  const isFinalized = ['approved', 'rejected', 'implemented'].includes(idea.status);
 
   // Reset scroll position về đầu khi chuyển sang idea khác
   useEffect(() => {
@@ -154,15 +155,16 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
     onUpdateStatus(t('idea.solution_proposal'), newSolution.note, newSolution.status, changedDifficulty);
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm(t('idea.delete_confirm') || 'Bạn có chắc chắn muốn xóa ý tưởng này? Hành động này không thể hoàn tác.')) {
-      return;
-    }
+  const handleDeleteClick = () => {
+    setShowDeleteConfirm(true);
+  };
 
+  const handleConfirmDelete = async () => {
     try {
       setDeleting(true);
       await api.delete(`/ideas/${idea.id}`);
       toast.success(t('idea.delete_success') || 'Đã xóa thành công');
+      setShowDeleteConfirm(false);
       if (onDelete) {
         onDelete();
       }
@@ -272,7 +274,7 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
           {/* Delete button - Show for Admin/Manager or owner */}
           {canDelete && (
             <button
-              onClick={handleDelete}
+              onClick={handleDeleteClick}
               disabled={deleting}
               className="px-4 py-2 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-2 transition-colors disabled:opacity-50"
               title={t('button.delete') || 'Xóa'}
@@ -550,6 +552,16 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleConfirmDelete}
+        title={t('idea.delete_title') || t('button.delete') || 'Xóa ý tưởng'}
+        message={t('idea.delete_confirm') || 'Bạn có chắc chắn muốn xóa ý tưởng này? Hành động này không thể hoàn tác.'}
+        type="danger"
+        loading={deleting}
+      />
     </div>
   );
 };
