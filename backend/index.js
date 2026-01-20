@@ -53,6 +53,7 @@ app.set('trust proxy', 1);
 app.use(helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production',
   crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
 // CORS configuration
@@ -61,6 +62,7 @@ const corsOptions = {
     const allowedOrigins = [
       // Production Netlify
       'https://smartfactoryconnect.netlify.app',
+      'https://smartfactory-connect.netlify.app',
       // Custom domain (if configured)
       'https://app.xiao.software',
       // Local development
