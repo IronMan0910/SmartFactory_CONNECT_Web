@@ -775,8 +775,10 @@ class PushNotificationService {
                 'assigned': 'Đã phân công',
                 'under_review': 'Đang xem xét',
                 'approved': 'Đã duyệt',
+                'in_progress': 'Đang triển khai',
                 'rejected': 'Đã từ chối',
                 'implemented': 'Đã triển khai',
+                'on_hold': 'Tạm hoãn',
                 'closed': 'Đã đóng'
             }[newStatus] || newStatus;
 
@@ -785,8 +787,10 @@ class PushNotificationService {
                 'assigned': '割り当て済み',
                 'under_review': 'レビュー中',
                 'approved': '承認済み',
+                'in_progress': '実施中',
                 'rejected': '拒否',
                 'implemented': '実装済み',
+                'on_hold': '保留',
                 'closed': 'クローズ'
             }[newStatus] || newStatus;
 
