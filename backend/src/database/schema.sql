@@ -363,11 +363,23 @@ CREATE TABLE ideas (
   implementation_notes_ja TEXT,
   actual_benefit TEXT,
   actual_benefit_ja TEXT,
+  like_count INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 COMMENT ON TABLE ideas IS 'Hộp thư góp ý (Hòm trắng/Hòm hồng) theo SRS Section 4, 5';
+
+-- Idea Likes Table
+CREATE TABLE idea_likes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  idea_id UUID NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(idea_id, user_id)
+);
+
+COMMENT ON TABLE idea_likes IS 'Bảng lưu lượt thích cho ý tưởng';
 
 CREATE TABLE idea_responses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -486,6 +498,24 @@ CREATE TYPE booking_status AS ENUM (
   'cancelled'
 );
 
+-- Booking Purposes Reference Table
+CREATE TABLE booking_purposes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code VARCHAR(50) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  name_ja VARCHAR(100),
+  description TEXT,
+  description_ja TEXT,
+  icon VARCHAR(50) DEFAULT 'calendar',
+  color VARCHAR(20) DEFAULT '#3B82F6',
+  is_active BOOLEAN DEFAULT true,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE booking_purposes IS 'Danh mục mục đích đặt phòng họp';
+
 -- Rooms Table
 CREATE TABLE rooms (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -528,6 +558,8 @@ CREATE TABLE room_bookings (
   room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
+  related_idea_id UUID REFERENCES ideas(id) ON DELETE SET NULL,
+  booking_purpose VARCHAR(50) REFERENCES booking_purposes(code) ON DELETE SET NULL,
   title VARCHAR(200) NOT NULL,
   title_ja VARCHAR(200),
   description TEXT,
@@ -613,6 +645,8 @@ CREATE INDEX idx_bookings_room ON room_bookings(room_id);
 CREATE INDEX idx_bookings_user ON room_bookings(user_id);
 CREATE INDEX idx_bookings_status ON room_bookings(status);
 CREATE INDEX idx_bookings_time ON room_bookings(start_time, end_time);
+CREATE INDEX idx_bookings_related_idea ON room_bookings(related_idea_id);
+CREATE INDEX idx_bookings_purpose ON room_bookings(booking_purpose);
 
 -- Room booking history indexes
 CREATE INDEX idx_room_booking_history_booking_id ON room_booking_history(booking_id);
@@ -716,6 +750,16 @@ CREATE INDEX idx_ideas_category ON ideas(category);
 CREATE INDEX idx_ideas_difficulty ON ideas(difficulty);
 CREATE INDEX idx_ideas_handler_level ON ideas(handler_level);
 CREATE INDEX idx_ideas_created_at ON ideas(created_at DESC);
+CREATE INDEX idx_ideas_like_count ON ideas(like_count DESC);
+
+-- Idea likes indexes
+CREATE INDEX idx_idea_likes_idea_id ON idea_likes(idea_id);
+CREATE INDEX idx_idea_likes_user_id ON idea_likes(user_id);
+CREATE INDEX idx_idea_likes_created_at ON idea_likes(created_at DESC);
+
+-- Booking purposes indexes
+CREATE INDEX idx_booking_purposes_code ON booking_purposes(code);
+CREATE INDEX idx_booking_purposes_is_active ON booking_purposes(is_active);
 
 -- News indexes
 CREATE INDEX idx_news_author_id ON news(author_id);
@@ -861,6 +905,30 @@ CREATE TRIGGER set_user_level_trigger
   FOR EACH ROW EXECUTE FUNCTION set_user_level();
 
 -- =====================================================
+-- IDEA LIKES TRIGGER
+-- =====================================================
+
+-- Function to update idea like counts
+CREATE OR REPLACE FUNCTION update_idea_like_counts() 
+RETURNS TRIGGER AS $$
+BEGIN
+  IF (TG_OP = 'INSERT') THEN
+    UPDATE ideas SET like_count = COALESCE(like_count, 0) + 1 WHERE id = NEW.idea_id;
+    RETURN NEW;
+  ELSIF (TG_OP = 'DELETE') THEN
+    UPDATE ideas SET like_count = GREATEST(COALESCE(like_count, 0) - 1, 0) WHERE id = OLD.idea_id;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for idea likes
+CREATE TRIGGER trigger_update_idea_like_counts
+AFTER INSERT OR DELETE ON idea_likes
+FOR EACH ROW EXECUTE FUNCTION update_idea_like_counts();
+
+-- =====================================================
 -- VIEWS
 -- =====================================================
 
@@ -925,19 +993,27 @@ WHERE u.is_active = true;
 DO $$
 BEGIN
   RAISE NOTICE '=====================================================';
-  RAISE NOTICE '✓ SmartFactory CONNECT Database Schema v2.0 Created!';
+  RAISE NOTICE '✓ SmartFactory CONNECT Database Schema v2.1 Created!';
   RAISE NOTICE '=====================================================';
   RAISE NOTICE 'Tables created:';
   RAISE NOTICE '  • departments';
   RAISE NOTICE '  • users';
   RAISE NOTICE '  • role_levels';
   RAISE NOTICE '  • incidents, incident_comments, incident_history';
-  RAISE NOTICE '  • ideas, idea_responses, idea_history, idea_ratings';
+  RAISE NOTICE '  • ideas, idea_responses, idea_history, idea_ratings, idea_likes';
   RAISE NOTICE '  • news, news_views, news_read_receipts';
   RAISE NOTICE '  • notifications';
+  RAISE NOTICE '  • rooms, room_bookings, room_booking_history, room_approval_rules';
+  RAISE NOTICE '  • booking_purposes';
   RAISE NOTICE '  • user_fcm_tokens';
   RAISE NOTICE '  • system_settings';
   RAISE NOTICE '  • audit_logs';
+  RAISE NOTICE '=====================================================';
+  RAISE NOTICE 'New features in v2.1:';
+  RAISE NOTICE '  • idea_likes table with auto-update trigger';
+  RAISE NOTICE '  • booking_purposes reference table';
+  RAISE NOTICE '  • room_bookings.related_idea_id for Kaizen meetings';
+  RAISE NOTICE '  • room_bookings.booking_purpose for categorization';
   RAISE NOTICE '=====================================================';
   RAISE NOTICE 'Role Level Mapping (SRS Section 9):';
   RAISE NOTICE '  Level 1: admin, general_manager';
@@ -948,3 +1024,21 @@ BEGIN
   RAISE NOTICE '  Level 6: viewer';
   RAISE NOTICE '=====================================================';
 END $$;
+
+-- =====================================================
+-- SEED DATA: BOOKING PURPOSES
+-- =====================================================
+
+INSERT INTO booking_purposes (code, name, name_ja, description, icon, color, sort_order)
+VALUES 
+  ('meeting', 'Họp thường kỳ', '定例会議', 'Cuộc họp định kỳ, họp team', 'users', '#3B82F6', 1),
+  ('training', 'Đào tạo', 'トレーニング', 'Đào tạo nhân viên, workshop', 'graduation-cap', '#10B981', 2),
+  ('interview', 'Phỏng vấn', '面接', 'Phỏng vấn tuyển dụng', 'user-check', '#8B5CF6', 3),
+  ('presentation', 'Thuyết trình', 'プレゼンテーション', 'Trình bày, báo cáo', 'presentation', '#F59E0B', 4),
+  ('idea_review', 'Đánh giá ý tưởng', 'アイデア評価', 'Họp đánh giá, thảo luận ý tưởng Kaizen', 'lightbulb', '#EC4899', 5),
+  ('client_meeting', 'Gặp khách hàng', '顧客対応', 'Tiếp khách, họp với đối tác', 'briefcase', '#EF4444', 6),
+  ('brainstorming', 'Brainstorming', 'ブレインストーミング', 'Họp sáng tạo, đề xuất ý tưởng', 'brain', '#06B6D4', 7),
+  ('project_review', 'Đánh giá dự án', 'プロジェクト評価', 'Họp review tiến độ dự án', 'folder-kanban', '#84CC16', 8),
+  ('safety_meeting', 'Họp an toàn', '安全会議', 'Họp an toàn lao động', 'shield-check', '#F97316', 9),
+  ('other', 'Khác', 'その他', 'Mục đích khác', 'more-horizontal', '#6B7280', 99)
+ON CONFLICT (code) DO NOTHING;

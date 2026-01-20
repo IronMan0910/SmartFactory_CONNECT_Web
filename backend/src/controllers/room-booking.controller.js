@@ -6,6 +6,28 @@
 const { pool, query } = require('../config/database');
 
 /**
+ * Get all booking purposes
+ */
+exports.getBookingPurposes = async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT code, name_vi, name_ja, description_vi, description_ja
+      FROM booking_purposes
+      WHERE is_active = true
+      ORDER BY sort_order, code
+    `);
+
+    res.json({ purposes: result.rows || [] });
+  } catch (error) {
+    console.error('❌ Get booking purposes error:', error);
+    res.status(500).json({
+      message: 'Lỗi khi lấy danh sách mục đích đặt phòng',
+      error: error.message
+    });
+  }
+};
+
+/**
  * Get all rooms with availability info
  */
 exports.getRooms = async (req, res) => {
@@ -63,12 +85,19 @@ exports.getBookings = async (req, res) => {
         d.name as department_name,
         rb.status,
         rb.rejection_reason,
+        rb.related_idea_id,
+        rb.booking_purpose,
+        bp.name_vi as booking_purpose_name,
+        bp.name_ja as booking_purpose_name_ja,
+        i.title as related_idea_title,
         rb.created_at,
         rb.updated_at
       FROM room_bookings rb
       JOIN rooms r ON rb.room_id = r.id
       JOIN users u ON rb.user_id = u.id
       LEFT JOIN departments d ON rb.department_id = d.id
+      LEFT JOIN booking_purposes bp ON rb.booking_purpose = bp.code
+      LEFT JOIN ideas i ON rb.related_idea_id = i.id
       WHERE 1=1
     `;
 
@@ -129,11 +158,17 @@ exports.getBookingById = async (req, res) => {
         r.floor,
         u.email as booked_by_email,
         u.full_name as booked_by_name,
-        d.name as department_full_name
+        d.name as department_full_name,
+        bp.name_vi as booking_purpose_name,
+        bp.name_ja as booking_purpose_name_ja,
+        i.title as related_idea_title,
+        i.ideabox_type as related_idea_type
       FROM room_bookings rb
       JOIN rooms r ON rb.room_id = r.id
       JOIN users u ON rb.user_id = u.id
       LEFT JOIN departments d ON rb.department_id = d.id
+      LEFT JOIN booking_purposes bp ON rb.booking_purpose = bp.code
+      LEFT JOIN ideas i ON rb.related_idea_id = i.id
       WHERE rb.id = $1
     `, [id]);
 
@@ -173,7 +208,9 @@ exports.createBooking = async (req, res) => {
       recurring_pattern,
       recurring_end_date,
       notes,
-      special_requirements
+      special_requirements,
+      related_idea_id,
+      booking_purpose
     } = req.body;
 
     const userId = req.user.id;
@@ -223,17 +260,17 @@ exports.createBooking = async (req, res) => {
     // Insert booking
     const insertResult = await client.query(`
       INSERT INTO room_bookings (
-        room_id, user_id, title, title_ja, description, 
+        room_id, user_id, department_id, title, title_ja, description, 
         purpose, start_time, end_time, expected_attendees, attendee_emails,
         status, is_recurring, recurring_pattern, recurring_end_date, 
-        notes, special_requirements
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        notes, special_requirements, related_idea_id, booking_purpose
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING id
     `, [
-      room_id, userId, title, title_ja, description,
+      room_id, userId, departmentId, title, title_ja, description,
       purpose, start_time, end_time, expected_attendees || 1, attendee_emails || [],
       initialStatus, is_recurring || false, recurring_pattern, recurring_end_date,
-      notes, special_requirements
+      notes, special_requirements, related_idea_id || null, booking_purpose || null
     ]);
 
     const bookingId = insertResult.rows[0].id;

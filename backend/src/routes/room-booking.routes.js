@@ -22,6 +22,12 @@ router.use(authenticate);
 // =====================================================
 
 /**
+ * GET /api/room-bookings/purposes
+ * Get all booking purposes for dropdown
+ */
+router.get('/purposes', roomBookingController.getBookingPurposes);
+
+/**
  * GET /api/room-bookings/rooms
  * Get all available meeting rooms
  */
