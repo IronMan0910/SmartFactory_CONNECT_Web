@@ -28,6 +28,9 @@ import {
   Pause,
   Globe,
   AlertCircle,
+  Lightbulb,
+  MessageSquareText,
+  Star,
 } from "lucide-react";
 import { PublicIdea, SensitiveMessage } from "./types";
 import { DifficultyBadge } from "./DifficultySelector";
@@ -176,10 +179,12 @@ export const EnhancedIdeaCard: React.FC<EnhancedIdeaCardProps> = ({
   const hasImage = "imageUrl" in idea && idea.imageUrl;
   const chatCount = "chat" in idea ? idea.chat?.length || 0 : "replies" in idea ? idea.replies?.length || 0 : 0;
   const hasAttachments = "attachments" in idea && idea.attachments && idea.attachments.length > 0;
+  const whiteboxSubtype = "whiteboxSubtype" in idea ? idea.whiteboxSubtype : undefined;
+  const satisfactionRating = "satisfactionRating" in idea ? idea.satisfactionRating : undefined;
 
   const config = statusConfig[status] || statusConfig.new;
   const primaryColor = "red"; // Always use red for DENSO brand
-  
+
   // Check if idea is in a "waiting" state (not yet resolved)
   const isWaiting = ['pending', 'under_review', 'forwarded', 'on_hold'].includes(status);
 
@@ -188,20 +193,18 @@ export const EnhancedIdeaCard: React.FC<EnhancedIdeaCardProps> = ({
       onClick={onClick}
       className={`
         group relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200
-        ${
-          isSelected
-            ? `bg-white dark:bg-neutral-800 shadow-lg border-2 border-${primaryColor}-500 scale-[1.01]`
-            : "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 hover:shadow-md hover:border-gray-300 dark:hover:border-neutral-600"
+        ${isSelected
+          ? `bg-white dark:bg-neutral-800 shadow-lg border-2 border-${primaryColor}-500 scale-[1.01]`
+          : "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 hover:shadow-md hover:border-gray-300 dark:hover:border-neutral-600"
         }
       `}
     >
       {/* Colored top bar */}
       <div
-        className={`h-1 ${
-          isSelected
-            ? "bg-gradient-to-r from-red-500 to-red-600"
-            : "bg-transparent"
-        }`}
+        className={`h-1 ${isSelected
+          ? "bg-gradient-to-r from-red-500 to-red-600"
+          : "bg-transparent"
+          }`}
       />
 
       <div className="p-4">
@@ -231,8 +234,29 @@ export const EnhancedIdeaCard: React.FC<EnhancedIdeaCardProps> = ({
                     ? "匿名"
                     : "Ẩn danh"
                   : language === "ja"
-                  ? "記名"
-                  : "Có tên"}
+                    ? "記名"
+                    : "Có tên"}
+              </span>
+            )}
+
+            {/* Subtype badge (Idea/Opinion) */}
+            {boxType === "white" && whiteboxSubtype && (
+              <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${whiteboxSubtype === 'idea'
+                ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400'
+                : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                }`}>
+                {whiteboxSubtype === 'idea' ? <Lightbulb size={12} /> : <MessageSquareText size={12} />}
+                {whiteboxSubtype === 'idea'
+                  ? (language === 'ja' ? 'アイデア' : 'Ý tưởng')
+                  : (language === 'ja' ? '意見' : 'Ý kiến')}
+              </span>
+            )}
+
+            {/* Satisfaction Star Rating Badge */}
+            {satisfactionRating && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800/50">
+                <Star size={12} className="fill-yellow-400 text-yellow-400" />
+                {satisfactionRating}
               </span>
             )}
           </div>

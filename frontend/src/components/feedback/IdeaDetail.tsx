@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { PublicIdea, DifficultyLevel } from "./types";
 import { IdeaHistory } from "./IdeaHistory";
 import { IdeaChat } from "./IdeaChat";
-import { Check, X, ArrowUpRight, Send, Save, Paperclip, User, Building2, ThumbsUp, Bell } from "lucide-react";
+import { Check, X, ArrowUpRight, Send, Save, Paperclip, User, Building2, ThumbsUp, Bell, Star, MessageSquare } from "lucide-react";
 import { useTranslation } from "../../contexts/LanguageContext";
 import TextArea from "../form/input/TextArea";
 import { DifficultyBadge, DifficultySelector } from "./DifficultySelector";
@@ -191,6 +191,12 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
                   {idea.group}
                 </span>
               )}
+              {idea.assignedToName && (
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-md text-xs font-medium">
+                  <User size={12} />
+                  {t('label.assigned_to')}: {idea.assignedToName}
+                </span>
+              )}
             </div>
           </div>
           {idea.difficulty && <DifficultyBadge difficulty={idea.difficulty} />}
@@ -243,7 +249,7 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
         ref={scrollContainerRef}
         className="overflow-y-auto flex-1 bg-gray-50 dark:bg-neutral-900"
       >
-        <div className="p-6 space-y-6 max-w-4xl mx-auto">
+        <div className="p-6 space-y-6 max-w-5xl mx-auto">
           {/* Status Workflow Panel - Thanh trạng thái */}
           <StatusWorkflowPanel
             currentStatus={idea.status}
@@ -320,6 +326,31 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
           {/* Nội dung chính */}
           <div className="bg-white dark:bg-neutral-800 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-neutral-700">
             <p className="leading-relaxed text-gray-700 dark:text-gray-300">{idea.content}</p>
+
+            {idea.expectedBenefit && (
+              <div className="mt-4 p-4 bg-blue-50/50 dark:bg-blue-900/10 border-l-4 border-blue-400 rounded-r-lg">
+                <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300 flex items-center gap-2 mb-1">
+                  <ArrowUpRight size={16} />
+                  {t('kaizen.expected_benefit')}
+                </h4>
+                <p className="text-sm text-blue-800 dark:text-blue-400 italic">
+                  {idea.expectedBenefit}
+                </p>
+              </div>
+            )}
+
+            {idea.actualBenefit && (
+              <div className="mt-4 p-4 bg-green-50/50 dark:bg-green-900/10 border-l-4 border-green-400 rounded-r-lg">
+                <h4 className="text-sm font-bold text-green-900 dark:text-green-300 flex items-center gap-2 mb-1">
+                  <Check size={16} />
+                  {t('kaizen.actual_benefit')}
+                </h4>
+                <p className="text-sm text-green-800 dark:text-green-400 font-medium">
+                  {idea.actualBenefit}
+                </p>
+              </div>
+            )}
+
             {idea.imageUrl && !idea.attachments?.length && (
               <img
                 src={idea.imageUrl}
@@ -328,6 +359,61 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
               />
             )}
           </div>
+
+          {/* MỨC ĐỘ HÀI LÒNG - Star Rating Display - Premium Design */}
+          {idea.satisfactionRating && (
+            <div className="mt-8 relative overflow-hidden group">
+              {/* Decorative background glow */}
+              <div className="absolute -inset-1 bg-gradient-to-r from-amber-400/20 to-orange-400/20 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition duration-500" />
+
+              <div className="relative bg-white dark:bg-neutral-800 border border-amber-100 dark:border-amber-900/40 rounded-2xl shadow-sm overflow-hidden">
+                <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x border-amber-50 dark:divide-amber-900/20">
+                  {/* Rating Score Side */}
+                  <div className="p-6 md:w-1/3 flex flex-col items-center justify-center bg-gradient-to-br from-amber-50/50 to-transparent dark:from-amber-900/10">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-500 mb-2">
+                      {t('kaizen.satisfaction_level')}
+                    </span>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-5xl font-black text-gray-900 dark:text-white leading-none">
+                        {idea.satisfactionRating}
+                      </span>
+                      <span className="text-xl font-bold text-gray-400 dark:text-neutral-500">/ 5</span>
+                    </div>
+                    <div className="flex gap-1 mt-3">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star
+                          key={s}
+                          size={24}
+                          className={`${s <= idea.satisfactionRating!
+                            ? 'fill-amber-400 text-amber-400 filter drop-shadow-[0_0_3px_rgba(251,191,36,0.5)]'
+                            : 'text-gray-200 dark:text-neutral-700'
+                            } transition-all duration-300 transform group-hover:scale-110`}
+                          style={{ transitionDelay: `${s * 50}ms` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Comment Side */}
+                  <div className="p-6 md:w-2/3 bg-white dark:bg-neutral-800 flex flex-col justify-center">
+                    <div className="relative">
+                      {/* Quote icon background */}
+                      <MessageSquare className="absolute -top-4 -left-4 w-12 h-12 text-amber-100 dark:text-amber-900/20 opacity-50" />
+
+                      <div className="relative pl-6">
+                        <span className="block text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-1.5 px-0.5">
+                          {t('kaizen.satisfaction_comment')}
+                        </span>
+                        <p className="text-gray-700 dark:text-neutral-300 italic text-lg leading-relaxed font-medium">
+                          {idea.satisfactionComment ? `"${idea.satisfactionComment}"` : t('common.no_comment') || "Không có nhận xét"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Attachments Section */}
           {idea.attachments && idea.attachments.length > 0 && (
@@ -414,7 +500,7 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
           )}
 
           {/* Lịch sử hành động */}
-          <div className="bg-white dark:bg-neutral-800 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-neutral-700">
+          <div className="bg-white dark:bg-neutral-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-neutral-700">
             <IdeaHistory history={idea.history} departments={departments} />
           </div>
 

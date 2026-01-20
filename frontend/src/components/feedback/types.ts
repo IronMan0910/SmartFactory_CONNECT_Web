@@ -116,6 +116,8 @@ export interface SensitiveMessage {
   departmentResponse?: DepartmentResponse;
   publishedInfo?: PublishedInfo;
   meeting?: IdeaMeeting;
+  expectedBenefit?: string;
+  actualBenefit?: string;
 }
 
 /** Current user placeholder - should be replaced with auth context */
@@ -153,4 +155,10 @@ export interface PublicIdea {
   history: ActionHistory[];
   chat: ChatMessage[];
   isRead: boolean; // Đã đọc hay chưa
+  whiteboxSubtype?: 'idea' | 'opinion';
+  expectedBenefit?: string;
+  actualBenefit?: string;
+  assignedToName?: string;
+  satisfactionRating?: number;
+  satisfactionComment?: string;
 }

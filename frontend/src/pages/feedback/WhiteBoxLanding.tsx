@@ -59,6 +59,12 @@ interface BackendIdea {
   status: string;
   history: any[];
   responses: any[];
+  whitebox_subtype?: 'idea' | 'opinion';
+  expected_benefit?: string;
+  actual_benefit?: string;
+  assigned_to_name?: string;
+  satisfactionRating?: number;
+  satisfactionComment?: string;
 }
 
 export default function WhiteBoxLanding() {
@@ -203,6 +209,12 @@ export default function WhiteBoxLanding() {
           time: new Date(r.created_at),
         })),
         isRead: true,
+        whiteboxSubtype: item.whitebox_subtype,
+        expectedBenefit: item.expected_benefit,
+        actualBenefit: item.actual_benefit,
+        assignedToName: item.assigned_to_name,
+        satisfactionRating: item.satisfactionRating,
+        satisfactionComment: item.satisfactionComment,
       };
     },
     [mapStatus]

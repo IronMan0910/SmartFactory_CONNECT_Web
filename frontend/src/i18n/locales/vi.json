@@ -157,7 +157,11 @@
     "discussion": "Trao đổi",
     "action_history": "Lịch sử hoạt động",
     "performed_by": "Thực hiện bởi",
-    "no_history": "Chưa có lịch sử hoạt động"
+    "no_history": "Chưa có lịch sử hoạt động",
+    "satisfaction_level": "Mức độ hài lòng",
+    "satisfaction_comment": "Ghi chú đánh giá",
+    "rated": "Đã đánh giá",
+    "stars": "sao"
   },
   "news": {
     "post_button": "Đăng tin tức",

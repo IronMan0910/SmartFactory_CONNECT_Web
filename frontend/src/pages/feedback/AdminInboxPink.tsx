@@ -70,8 +70,8 @@ const mapIdeaToMessage = (idea: any): SensitiveMessage => {
   const parseAttachments = () => {
     if (!idea.attachments) return undefined;
     try {
-      const att = typeof idea.attachments === 'string' 
-        ? JSON.parse(idea.attachments) 
+      const att = typeof idea.attachments === 'string'
+        ? JSON.parse(idea.attachments)
         : idea.attachments;
       if (Array.isArray(att) && att.length > 0) {
         const baseUrl = import.meta.env.VITE_API_URL?.replace("/api", "") || "";
@@ -92,7 +92,7 @@ const mapIdeaToMessage = (idea: any): SensitiveMessage => {
   };
 
   const attachments = parseAttachments();
-  
+
   return {
     id: idea.id,
     isAnonymous: idea.is_anonymous,
@@ -103,8 +103,8 @@ const mapIdeaToMessage = (idea: any): SensitiveMessage => {
     fullContent: idea.description,
     difficulty: idea.difficulty,
     attachments: attachments,
-    imageUrl: attachments && attachments.length > 0 
-      ? attachments.find((a: any) => a.mime_type?.startsWith('image/'))?.url 
+    imageUrl: attachments && attachments.length > 0
+      ? attachments.find((a: any) => a.mime_type?.startsWith('image/'))?.url
       : undefined,
     timestamp: new Date(idea.created_at),
     status: mapStatus(idea.status),
@@ -113,18 +113,18 @@ const mapIdeaToMessage = (idea: any): SensitiveMessage => {
         h.action === "submitted"
           ? "CREATED"
           : h.action === "assigned"
-          ? "FORWARDED"
-          : h.action === "forwarded"
-          ? "FORWARDED"
-          : h.action === "department_responded"
-          ? "DEPARTMENT_RESPONDED"
-          : h.action === "published"
-          ? "PUBLISHED"
-          : h.action === "revision_requested"
-          ? "REVISION_REQUESTED"
-          : h.action === "responded"
-          ? "REPLIED"
-          : "CREATED",
+            ? "FORWARDED"
+            : h.action === "forwarded"
+              ? "FORWARDED"
+              : h.action === "department_responded"
+                ? "DEPARTMENT_RESPONDED"
+                : h.action === "published"
+                  ? "PUBLISHED"
+                  : h.action === "revision_requested"
+                    ? "REVISION_REQUESTED"
+                    : h.action === "responded"
+                      ? "REPLIED"
+                      : "CREATED",
       timestamp: new Date(h.created_at),
       details: h.details
         ? typeof h.details === "string"
@@ -142,25 +142,25 @@ const mapIdeaToMessage = (idea: any): SensitiveMessage => {
     // Extended fields for Pink Box workflow
     forwardInfo: idea.forwarded_to_department_id
       ? {
-          forwarded_to_department_id: idea.forwarded_to_department_id,
-          forwarded_to_department_name: idea.forwarded_to_department_name,
-          forwarded_at: idea.forwarded_at
-            ? new Date(idea.forwarded_at)
-            : undefined,
-          forwarded_by: idea.forwarded_by_name,
-          forwarded_note: idea.forwarded_note,
-          forwarded_note_ja: idea.forwarded_note_ja,
-        }
+        forwarded_to_department_id: idea.forwarded_to_department_id,
+        forwarded_to_department_name: idea.forwarded_to_department_name,
+        forwarded_at: idea.forwarded_at
+          ? new Date(idea.forwarded_at)
+          : undefined,
+        forwarded_by: idea.forwarded_by_name,
+        forwarded_note: idea.forwarded_note,
+        forwarded_note_ja: idea.forwarded_note_ja,
+      }
       : undefined,
     departmentResponse: idea.department_response
       ? {
-          department_response: idea.department_response,
-          department_response_ja: idea.department_response_ja,
-          department_responded_at: idea.department_responded_at
-            ? new Date(idea.department_responded_at)
-            : undefined,
-          department_responded_by: idea.department_responded_by_name,
-        }
+        department_response: idea.department_response,
+        department_response_ja: idea.department_response_ja,
+        department_responded_at: idea.department_responded_at
+          ? new Date(idea.department_responded_at)
+          : undefined,
+        department_responded_by: idea.department_responded_by_name,
+      }
       : undefined,
     publishedInfo: {
       published_response: idea.published_response,
@@ -168,6 +168,8 @@ const mapIdeaToMessage = (idea: any): SensitiveMessage => {
       published_at: idea.published_at ? new Date(idea.published_at) : undefined,
       is_published: idea.is_published || false,
     },
+    expectedBenefit: idea.expected_benefit,
+    actualBenefit: idea.actual_benefit,
   };
 };
 
@@ -272,8 +274,8 @@ export default function SensitiveInboxPageV2() {
       if (statusFilter === "published") matchStatus = msg.status === "published";
 
       // Department filter
-      const matchDepartment = 
-        departmentFilter === "" || 
+      const matchDepartment =
+        departmentFilter === "" ||
         msg.forwardInfo?.forwarded_to_department_name?.toLowerCase().includes(departmentFilter.toLowerCase());
 
       // Date filter
@@ -321,20 +323,19 @@ export default function SensitiveInboxPageV2() {
         prev.map((m) =>
           m.id === messageId
             ? {
-                ...m,
-                status: "forwarded" as MessageStatus,
-                history: [
-                  ...m.history,
-                  {
-                    action: "FORWARDED" as const,
-                    timestamp: new Date(),
-                    details: `${t("feedback.forward_to")} ${
-                      departments.find((d) => d.id === departmentId)?.name
+              ...m,
+              status: "forwarded" as MessageStatus,
+              history: [
+                ...m.history,
+                {
+                  action: "FORWARDED" as const,
+                  timestamp: new Date(),
+                  details: `${t("feedback.forward_to")} ${departments.find((d) => d.id === departmentId)?.name
                     }`,
-                    actor: CURRENT_USER,
-                  },
-                ],
-              }
+                  actor: CURRENT_USER,
+                },
+              ],
+            }
             : m
         )
       );
@@ -343,8 +344,7 @@ export default function SensitiveInboxPageV2() {
     } catch (error: any) {
       console.error("Forward failed:", error);
       toast.error(
-        `${t("feedback.messages.forward_fail")}: ${
-          error.response?.data?.message || error.message
+        `${t("feedback.messages.forward_fail")}: ${error.response?.data?.message || error.message
         }`
       );
     } finally {
@@ -410,8 +410,7 @@ export default function SensitiveInboxPageV2() {
     } catch (error: any) {
       console.error("Reply failed:", error);
       toast.error(
-        `${t("feedback.messages.reply_fail")}: ${
-          error.response?.data?.message || error.message
+        `${t("feedback.messages.reply_fail")}: ${error.response?.data?.message || error.message
         }`
       );
     } finally {
@@ -472,18 +471,16 @@ export default function SensitiveInboxPageV2() {
               >
                 <RefreshCw
                   size={18}
-                  className={`text-gray-600 dark:text-gray-400 ${
-                    refreshing ? "animate-spin" : ""
-                  }`}
+                  className={`text-gray-600 dark:text-gray-400 ${refreshing ? "animate-spin" : ""
+                    }`}
                 />
               </button>
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className={`p-2 rounded-lg border transition-colors ${
-                  showFilters
-                    ? "bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700"
-                    : "border-gray-300 dark:border-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-700"
-                }`}
+                className={`p-2 rounded-lg border transition-colors ${showFilters
+                  ? "bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700"
+                  : "border-gray-300 dark:border-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-700"
+                  }`}
               >
                 <SlidersHorizontal
                   size={18}
@@ -530,11 +527,10 @@ export default function SensitiveInboxPageV2() {
                     {isSupported && (
                       <button
                         onClick={startListening}
-                        className={`p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-600 ${
-                          isListening
-                            ? "text-red-500 animate-pulse"
-                            : "text-gray-400"
-                        }`}
+                        className={`p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-600 ${isListening
+                          ? "text-red-500 animate-pulse"
+                          : "text-gray-400"
+                          }`}
                       >
                         <Mic size={16} />
                       </button>
@@ -616,7 +612,7 @@ export default function SensitiveInboxPageV2() {
               {/* Results count */}
               {hasActiveFilters && (
                 <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-                  {language === "ja" 
+                  {language === "ja"
                     ? `${filteredMessages.length} 件の結果`
                     : `Tìm thấy ${filteredMessages.length} kết quả`}
                 </div>

@@ -151,7 +151,14 @@
     "solution_proposal": "解決策の提案:",
     "solution_placeholder": "解決策を入力...",
     "chat_placeholder": "返信を入力...",
-    "discussion": "ディスカッション"
+    "discussion": "ディスカッション",
+    "action_history": "活動履歴",
+    "performed_by": "実施者",
+    "no_history": "活動履歴はありません",
+    "satisfaction_level": "満足度",
+    "satisfaction_comment": "評価コメント",
+    "rated": "評価済み",
+    "stars": "星"
   },
   "news": {
     "post_button": "ニュース投稿",
@@ -867,7 +874,7 @@
     "btn_idea": "アイデア検索",
     "btn_news": "ニュース作成"
   },
-   "difficulty": {
+  "difficulty": {
     "label": "難易度",
     "A": "難しい",
     "B": "普通",
