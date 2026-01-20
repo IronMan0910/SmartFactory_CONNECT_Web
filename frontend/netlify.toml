@@ -54,6 +54,12 @@
     X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    # Allow cross-origin resources (images from api.xiao.software)
+    Cross-Origin-Embedder-Policy = "unsafe-none"
+    Cross-Origin-Opener-Policy = "same-origin-allow-popups"
+    Cross-Origin-Resource-Policy = "cross-origin"
+    # CSP allowing images from api.xiao.software
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.xiao.software https://*.xiao.software; font-src 'self' data:; connect-src 'self' https://api.xiao.software https://*.xiao.software wss://api.xiao.software; media-src 'self' https://api.xiao.software https://*.xiao.software; frame-ancestors 'none';"
 
 # Cache static assets
 [[headers]]

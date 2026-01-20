@@ -228,15 +228,18 @@ async def check_duplicate_idea(request: CheckDuplicateRequest):
                     WHERE ir.idea_id = i.id
                     LIMIT 5) as responses,
                     (SELECT json_agg(json_build_object(
-                        'action', ih.action,
-                        'created_at', ih.created_at,
-                        'details', ih.details,
-                        'performed_by_name', hu.full_name
-                    ) ORDER BY ih.created_at DESC)
-                    FROM idea_history ih
-                    LEFT JOIN users hu ON ih.performed_by = hu.id
-                    WHERE ih.idea_id = i.id
-                    LIMIT 10) as history
+                        'from_status', ist.from_status,
+                        'to_status', ist.to_status,
+                        'from_stage', ist.from_stage,
+                        'to_stage', ist.to_stage,
+                        'reason', ist.reason,
+                        'created_at', ist.created_at,
+                        'transitioned_by_name', tu.full_name
+                    ) ORDER BY ist.created_at DESC)
+                    FROM idea_status_transitions ist
+                    LEFT JOIN users tu ON ist.transitioned_by = tu.id
+                    WHERE ist.idea_id = i.id
+                    LIMIT 10) as workflow_history
                 FROM ideas i
                 LEFT JOIN users u ON i.submitter_id = u.id
                 LEFT JOIN departments d ON i.department_id = d.id
@@ -283,7 +286,7 @@ async def check_duplicate_idea(request: CheckDuplicateRequest):
                     "implemented_at": row['implemented_at'].isoformat() if row['implemented_at'] else None,
                     "has_resolution": row['status'] in ['implemented', 'approved'],
                     "responses": row['responses'] or [],
-                    "history": row['history'] or []
+                    "workflow_history": row['workflow_history'] or []
                 }
                 similar_ideas.append(idea_data)
         
@@ -316,7 +319,7 @@ async def check_duplicate_idea(request: CheckDuplicateRequest):
             message=message,
             message_ja=message_ja,
             similar_ideas=similar_ideas[:5],  # Top 5 similar
-            workflow_history=similar_ideas[0]['history'] if similar_ideas else []
+            workflow_history=similar_ideas[0]['workflow_history'] if similar_ideas else []
         )
         
     except Exception as e:
@@ -349,20 +352,20 @@ async def find_similar_ideas(
     try:
         # Generate embedding for query
         query_embedding = embedding_service.encode(query)
+        embedding_list = query_embedding.tolist()
         
-        # Build filter conditions
+        # Build filter conditions - use positional params carefully
         filter_conditions = ["i.embedding IS NOT NULL"]
-        params = [query_embedding.tolist(), query_embedding.tolist()]
+        extra_params = []
         
         if ideabox_type:
-            filter_conditions.append("i.ideabox_type = %s")
-            params.append(ideabox_type)
+            filter_conditions.append(f"i.ideabox_type = '{ideabox_type}'::ideabox_type")
         
         if whitebox_subtype:
-            filter_conditions.append("i.whitebox_subtype = %s")
-            params.append(whitebox_subtype)
+            filter_conditions.append(f"i.whitebox_subtype = '{whitebox_subtype}'::whitebox_subtype")
         
-        params.append(limit)
+        # Final params: embedding1, embedding2, limit
+        params = [embedding_list, embedding_list, limit]
         
         # Search in ideas table with pgvector - with more fields and history
         with db.cursor() as cur:
@@ -384,23 +387,38 @@ async def find_similar_ideas(
                     i.updated_at,
                     i.reviewed_at,
                     i.implemented_at,
+                    i.published_response,
+                    i.published_response_ja,
+                    i.is_published,
+                    i.published_at,
                     u.full_name as submitter_name,
                     d.name as department_name,
                     1 - (i.embedding <=> %s::vector) as similarity,
                     (SELECT COUNT(*) FROM ideas i2 
                      WHERE i2.status = 'implemented' 
                      AND i2.category = i.category) as implemented_count,
-                    (SELECT response FROM idea_responses 
-                     WHERE idea_id = i.id 
-                     ORDER BY created_at DESC LIMIT 1) as last_response,
                     (SELECT json_agg(json_build_object(
-                        'action', ih.action,
-                        'created_at', ih.created_at,
-                        'details', ih.details
-                    ) ORDER BY ih.created_at DESC)
-                    FROM idea_history ih
-                    WHERE ih.idea_id = i.id
-                    LIMIT 5) as recent_history,
+                        'response', ir.response,
+                        'created_at', ir.created_at,
+                        'responder_name', ru.full_name
+                    ) ORDER BY ir.created_at DESC)
+                    FROM idea_responses ir
+                    LEFT JOIN users ru ON ir.user_id = ru.id
+                    WHERE ir.idea_id = i.id
+                    LIMIT 10) as responses,
+                    (SELECT json_agg(json_build_object(
+                        'from_status', ist.from_status,
+                        'to_status', ist.to_status,
+                        'from_stage', ist.from_stage,
+                        'to_stage', ist.to_stage,
+                        'reason', ist.reason,
+                        'created_at', ist.created_at,
+                        'transitioned_by_name', tu.full_name
+                    ) ORDER BY ist.created_at DESC)
+                    FROM idea_status_transitions ist
+                    LEFT JOIN users tu ON ist.transitioned_by = tu.id
+                    WHERE ist.idea_id = i.id
+                    LIMIT 10) as workflow_history,
                     ws.stage_name,
                     ws.stage_name_ja,
                     ws.color as stage_color
@@ -448,9 +466,13 @@ async def find_similar_ideas(
                     "reviewed_at": row['reviewed_at'].isoformat() if row['reviewed_at'] else None,
                     "implemented_at": row['implemented_at'].isoformat() if row['implemented_at'] else None,
                     "implemented_in_category": row['implemented_count'] or 0,
-                    "last_response": row['last_response'][:100] if row['last_response'] else None,
-                    "has_resolution": row['status'] in ['implemented', 'approved'] or row['last_response'] is not None,
-                    "recent_history": row['recent_history'] or []
+                    "published_response": row['published_response'],
+                    "published_response_ja": row['published_response_ja'],
+                    "is_published": row['is_published'],
+                    "published_at": row['published_at'].isoformat() if row['published_at'] else None,
+                    "responses": row['responses'] or [],
+                    "workflow_history": row['workflow_history'] or [],
+                    "has_resolution": row['status'] in ['implemented', 'approved', 'published'] or row['published_response'] is not None
                 })
         
         return {
@@ -483,7 +505,7 @@ async def find_similar_ideas(
                     LEFT JOIN departments d ON i.department_id = d.id
                     LEFT JOIN idea_workflow_stages ws ON i.workflow_stage = ws.stage_code
                     WHERE (i.title ILIKE %s OR i.description ILIKE %s)
-                      AND i.ideabox_type = %s
+                      AND i.ideabox_type = %s::ideabox_type
                     ORDER BY i.created_at DESC
                     LIMIT %s
                 """, (f'%{query}%', f'%{query}%', ideabox_type, limit))

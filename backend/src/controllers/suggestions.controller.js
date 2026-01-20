@@ -70,10 +70,11 @@ async function searchIncidentsPostgres(query, limit = 5) {
 
 /**
  * Fallback: Search ideas using PostgreSQL full-text search  
+ * Enhanced version with full workflow history and responses
  */
 async function searchIdeasPostgres(query, userId, limit = 5) {
   try {
-    // Đầu tiên tìm các ý tưởng tương tự
+    // Main query to get similar ideas with workflow info
     const result = await db.query(`
       SELECT 
         i.id,
@@ -83,14 +84,22 @@ async function searchIdeasPostgres(query, userId, limit = 5) {
         i.category,
         i.difficulty,
         i.created_at,
+        i.updated_at,
         i.whitebox_subtype,
         i.ideabox_type,
         i.like_count,
+        i.workflow_stage,
+        i.published_response,
+        i.implementation_notes,
+        i.review_notes,
         d.name as department_name,
         d.code as department_code,
         u.full_name as submitter_name,
         h.full_name as handler_name,
-        COALESCE(i.implementation_notes, i.review_notes, i.published_response) as last_response,
+        ws.stage_name,
+        ws.stage_name_ja,
+        ws.color as stage_color,
+        COALESCE(i.published_response, i.implementation_notes, i.review_notes) as last_response,
         EXISTS (
           SELECT 1 FROM idea_likes 
           WHERE idea_id = i.id 
@@ -105,6 +114,7 @@ async function searchIdeasPostgres(query, userId, limit = 5) {
       LEFT JOIN departments d ON i.department_id = d.id
       LEFT JOIN users u ON i.submitter_id = u.id
       LEFT JOIN users h ON i.assigned_to = h.id
+      LEFT JOIN idea_workflow_stages ws ON i.workflow_stage = ws.stage_code
       WHERE 
         i.title ILIKE $2
         OR i.description ILIKE $2
@@ -114,7 +124,62 @@ async function searchIdeasPostgres(query, userId, limit = 5) {
       LIMIT $3
     `, [query, `%${query}%`, limit, userId]);
 
-    return result.rows;
+    // Enrich each idea with responses and workflow history
+    const enrichedIdeas = await Promise.all(result.rows.map(async (idea) => {
+      try {
+        // Get responses for this idea (up to 5 most recent)
+        const responsesResult = await db.query(`
+          SELECT 
+            ir.id,
+            ir.response,
+            ir.response_ja,
+            ir.created_at,
+            u.full_name as responder_name,
+            u.role as responder_role
+          FROM idea_responses ir
+          LEFT JOIN users u ON ir.user_id = u.id
+          WHERE ir.idea_id = $1
+          ORDER BY ir.created_at DESC
+          LIMIT 5
+        `, [idea.id]);
+
+        // Get workflow history (status transitions)
+        const historyResult = await db.query(`
+          SELECT 
+            ist.id,
+            ist.from_status,
+            ist.to_status,
+            ist.from_stage,
+            ist.to_stage,
+            ist.reason,
+            ist.created_at,
+            u.full_name as performed_by_name,
+            u.role as performed_by_role
+          FROM idea_status_transitions ist
+          LEFT JOIN users u ON ist.transitioned_by = u.id
+          WHERE ist.idea_id = $1
+          ORDER BY ist.created_at DESC
+          LIMIT 10
+        `, [idea.id]);
+
+        return {
+          ...idea,
+          responses: responsesResult.rows,
+          workflow_history: historyResult.rows,
+          has_resolution: idea.status === 'implemented' || idea.status === 'published' || !!idea.published_response
+        };
+      } catch (e) {
+        // If sub-queries fail, return idea with empty arrays
+        return {
+          ...idea,
+          responses: [],
+          workflow_history: [],
+          has_resolution: idea.status === 'implemented' || idea.status === 'published'
+        };
+      }
+    }));
+
+    return enrichedIdeas;
   } catch (error) {
     console.error('[Suggestions] Postgres ideas search error:', error.message);
     return [];

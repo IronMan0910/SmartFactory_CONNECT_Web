@@ -67,12 +67,15 @@ router.get('/:fileId', async (req, res) => {
 
     const fileData = await MediaStorageService.downloadFile(fileId);
 
-    // Set headers
+    // Set headers - including CORS headers for cross-origin access
     res.set({
       'Content-Type': fileData.contentType,
       'Content-Length': fileData.size,
       'Content-Disposition': `inline; filename="${fileData.filename}"`,
       'Cache-Control': 'public, max-age=86400', // Cache 1 day
+      // CORS headers to allow cross-origin access from Netlify
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
     });
 
     // Pipe stream to response with error handling
@@ -115,6 +118,9 @@ router.get('/:fileId/download', async (req, res) => {
       'Content-Type': fileData.contentType,
       'Content-Length': fileData.size,
       'Content-Disposition': `attachment; filename="${fileData.filename}"`,
+      // CORS headers to allow cross-origin access
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
     });
 
     // Error handling for stream
