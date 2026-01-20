@@ -121,7 +121,7 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
       HOST: 0.0.0.0
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      FRONTEND_URL: ${FRONTEND_URL:-https://xiao.software}
       # PostgreSQL Database configuration
       DB_HOST: database
       DB_PORT: 5432
@@ -184,7 +184,8 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: /api
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_WS_URL: ${VITE_WS_URL:-https://api.xiao.software}
     container_name: smartfactory_frontend
     restart: unless-stopped
     depends_on:
@@ -255,6 +256,10 @@ services:
         reservations:
           cpus: '0.25'
           memory: 512M
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 # ========== CLOUDFLARE TUNNEL ==========
   # Exposes services to public internet via Cloudflare Zero Trust

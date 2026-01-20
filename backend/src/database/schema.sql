@@ -115,6 +115,7 @@ CREATE TYPE idea_status AS ENUM (
   'pending',        -- Chờ xem xét
   'under_review',   -- Đang xem xét
   'approved',       -- Đã phê duyệt
+  'in_progress',    -- Đang triển khai
   'rejected',       -- Từ chối
   'implemented',    -- Đã triển khai
   'on_hold'         -- Tạm hoãn

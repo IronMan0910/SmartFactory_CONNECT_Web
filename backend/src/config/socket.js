@@ -28,19 +28,27 @@ const connectionStats = {
  */
 function initializeSocket(server) {
   const isProduction = process.env.NODE_ENV === 'production';
-  
+
   const io = new Server(server, {
     cors: {
       origin: (origin, callback) => {
         const allowedOrigins = [
           process.env.FRONTEND_URL || 'http://localhost:5173',
+          'https://xiao.software',
+          'https://www.xiao.software',
+          'https://api.xiao.software',
           'http://localhost',
           'http://localhost:80',
         ];
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
           callback(null, true);
         } else {
-          callback(null, true); // Permissive for now
+          // Temporarily allow all for debugging if issues persist
+          console.log('[Socket] Origin check warn:', origin);
+          callback(null, true);
         }
       },
       credentials: true,
@@ -62,14 +70,14 @@ function initializeSocket(server) {
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
-      
+
       if (!token) {
         return next(new Error('Authentication error: No token provided'));
       }
 
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
+
       // Get user from database
       const result = await db.query(
         'SELECT id, employee_code, email, full_name, role, level, department_id, preferred_language FROM users WHERE id = $1 AND is_active = true',
@@ -96,25 +104,24 @@ function initializeSocket(server) {
     if (connectionStats.currentConnections > connectionStats.peakConnections) {
       connectionStats.peakConnections = connectionStats.currentConnections;
     }
-    
-    if (!isProduction) {
-      console.log(`User connected: ${socket.user.full_name} (${socket.user.id}) - Total: ${connectionStats.currentConnections}`);
-    };
-    
+
+    // Always log connection for debugging
+    console.log(`[Socket] User connected: ${socket.user.full_name} (${socket.user.id}) - Total: ${connectionStats.currentConnections}`);
+
     // Join user-specific room
     socket.join(`user_${socket.user.id}`);
-    
+
     // Join role-specific room
     socket.join(`role_${socket.user.role}`);
-    
+
     // Join department-specific room
     if (socket.user.department_id) {
       socket.join(`dept_${socket.user.department_id}`);
     }
-    
+
     // Join level-specific rooms (for hierarchical broadcasting)
     socket.join(`level_${socket.user.level}`);
-    
+
     // Send connection success event with user info
     socket.emit('connected', {
       message: 'Connected to SmartFactory CONNECT',
@@ -132,7 +139,7 @@ function initializeSocket(server) {
         const limit = data?.limit || 20;
         const offset = (page - 1) * limit;
         const lang = socket.user?.preferred_language || 'vi';
-        
+
         const result = await db.query(
           `SELECT 
              n.*,
@@ -144,7 +151,7 @@ function initializeSocket(server) {
            LIMIT $2 OFFSET $3`,
           [socket.user.id, limit, offset]
         );
-        
+
         socket.emit('notifications_list', {
           notifications: result.rows,
           page,
@@ -160,22 +167,22 @@ function initializeSocket(server) {
     socket.on('mark_read', async (data) => {
       try {
         const { notificationId } = data;
-        
+
         await db.query(
           `UPDATE notifications 
            SET is_read = true, read_at = CURRENT_TIMESTAMP 
            WHERE id = $1 AND recipient_id = $2`,
           [notificationId, socket.user.id]
         );
-        
+
         socket.emit('notification_read', { notificationId });
-        
+
         // Send updated unread count
         const countResult = await db.query(
           'SELECT COUNT(*) as count FROM notifications WHERE recipient_id = $1 AND is_read = false',
           [socket.user.id]
         );
-        
+
         socket.emit('unread_count', { count: parseInt(countResult.rows[0].count) });
       } catch (error) {
         console.error('Error marking notification as read:', error);
@@ -192,7 +199,7 @@ function initializeSocket(server) {
            WHERE recipient_id = $1 AND is_read = false`,
           [socket.user.id]
         );
-        
+
         socket.emit('all_notifications_read');
         socket.emit('unread_count', { count: 0 });
       } catch (error) {
@@ -208,7 +215,7 @@ function initializeSocket(server) {
           'SELECT COUNT(*) as count FROM notifications WHERE recipient_id = $1 AND is_read = false',
           [socket.user.id]
         );
-        
+
         socket.emit('unread_count', { count: parseInt(result.rows[0].count) });
       } catch (error) {
         console.error('Error getting unread count:', error);
@@ -219,19 +226,19 @@ function initializeSocket(server) {
     // Handle incident updates subscription
     socket.on('subscribe_incidents', () => {
       socket.join('incidents');
-      console.log(`User ${socket.user.full_name} subscribed to incidents`);
+      console.log(`[Socket] User ${socket.user.full_name} subscribed to incidents`);
     });
 
     // Handle ideas updates subscription
     socket.on('subscribe_ideas', () => {
       socket.join('ideas');
-      console.log(`User ${socket.user.full_name} subscribed to ideas`);
+      console.log(`[Socket] User ${socket.user.full_name} subscribed to ideas`);
     });
 
     // Handle news updates subscription
     socket.on('subscribe_news', () => {
       socket.join('news');
-      console.log(`User ${socket.user.full_name} subscribed to news`);
+      console.log(`[Socket] User ${socket.user.full_name} subscribed to news`);
     });
 
     // Handle typing indicator (for comments/responses)
@@ -247,9 +254,7 @@ function initializeSocket(server) {
     // Disconnect handler
     socket.on('disconnect', (reason) => {
       connectionStats.currentConnections--;
-      if (!isProduction) {
-        console.log(`User disconnected: ${socket.user.full_name} (${socket.user.id}) - Reason: ${reason}`);
-      }
+      console.log(`[Socket] User disconnected: ${socket.user.full_name} (${socket.user.id}) - Reason: ${reason}`);
     });
 
     // Error handler
@@ -259,26 +264,9 @@ function initializeSocket(server) {
   });
 
   // =========================================================
-  // REDIS ADAPTER FOR HORIZONTAL SCALING
-  // =========================================================
-  // Uncomment this section when scaling to multiple instances
-  /*
-  const { createAdapter } = require('@socket.io/redis-adapter');
-  const { createClient } = require('redis');
-  
-  const pubClient = createClient({ url: process.env.REDIS_URL });
-  const subClient = pubClient.duplicate();
-  
-  Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
-    io.adapter(createAdapter(pubClient, subClient));
-    console.log('✓ Socket.io Redis adapter connected');
-  });
-  */
-
-  // =========================================================
   // BROADCAST METHODS FOR SERVER-SIDE USE
   // =========================================================
-  
+
   io.broadcastIncident = (event, data) => {
     connectionStats.messagesSent++;
     io.to('incidents').emit(event, data);
@@ -286,6 +274,7 @@ function initializeSocket(server) {
 
   io.broadcastIdea = (event, data) => {
     connectionStats.messagesSent++;
+    console.log(`[Socket] Broadcasting idea event: ${event}, ideaId: ${data?.id}`);
     io.to('ideas').emit(event, data);
   };
 
@@ -332,7 +321,7 @@ function initializeSocket(server) {
   });
 
   console.log('✓ Socket.io initialized (optimized for scale)');
-  
+
   return io;
 }
 

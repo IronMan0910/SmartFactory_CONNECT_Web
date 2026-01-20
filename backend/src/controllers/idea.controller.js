@@ -160,6 +160,75 @@ const processIdeaAsync = async (ideaId, data, files, submitterId) => {
 };
 
 /**
+ * Helper to fetch full idea details and broadcast event
+ */
+const fetchAndBroadcastIdea = async (app, ideaId, eventName, extraData = {}) => {
+  const io = app.get('io');
+  if (!io || !io.broadcastIdea) return;
+
+  try {
+    const query = `
+      SELECT 
+        i.id,
+        i.ideabox_type,
+        i.whitebox_subtype,
+        i.category,
+        i.title,
+        i.description,
+        i.expected_benefit,
+        i.created_at,
+        i.status,
+        i.difficulty,
+        i.actual_benefit,
+        i.submitter_id,
+        i.department_id,
+        i.assigned_to,
+        i.reviewed_by,
+        i.is_anonymous,
+        i.attachments,
+        '[]'::jsonb as history,
+        '[]'::jsonb as responses,
+        CASE 
+          WHEN i.is_anonymous = true THEN 'Anonymous'
+          ELSE u.full_name 
+        END as submitter_name,
+        CASE 
+          WHEN i.is_anonymous = true THEN NULL
+          ELSE u.employee_code 
+        END as submitter_code,
+        d.name as department_name,
+        a.full_name as assigned_to_name,
+        r.full_name as reviewed_by_name,
+        (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id LIMIT 1) as "satisfactionRating",
+        (SELECT ir.feedback FROM idea_ratings ir WHERE ir.idea_id = i.id LIMIT 1) as "satisfactionComment"
+      FROM ideas i
+      LEFT JOIN users u ON i.submitter_id = u.id
+      LEFT JOIN departments d ON i.department_id = d.id
+      LEFT JOIN users a ON i.assigned_to = a.id
+      LEFT JOIN users r ON i.reviewed_by = r.id
+      WHERE i.id = $1
+    `;
+
+    const result = await db.query(query, [ideaId]);
+    if (result.rows.length > 0) {
+      const idea = result.rows[0];
+      if (idea.is_anonymous) {
+        delete idea.submitter_id;
+      }
+
+      console.log(`[Broadcast] Broadcasting idea ${ideaId} for event ${eventName}. Title: ${idea.title?.substring(0, 20)}...`);
+
+      io.broadcastIdea(eventName, {
+        ...idea,
+        ...extraData
+      });
+    }
+  } catch (error) {
+    console.error(`[Broadcast] Error fetching idea ${ideaId}: `, error);
+  }
+};
+
+/**
  * Create new idea
  * POST /api/ideas
  * 
@@ -206,26 +275,26 @@ const createIdea = asyncHandler(async (req, res) => {
 
   // ===== SYNC: Create idea immediately with original content =====
   const query = `
-    INSERT INTO ideas (
-      ideabox_type,
-      whitebox_subtype,
-      category,
-      title,
-      title_ja,
-      description,
-      description_ja,
-      expected_benefit,
-      expected_benefit_ja,
-      submitter_id,
-      department_id,
-      is_anonymous,
-      attachments,
-      status,
-      handler_level,
-      difficulty
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14, $15)
+    INSERT INTO ideas(
+        ideabox_type,
+        whitebox_subtype,
+        category,
+        title,
+        title_ja,
+        description,
+        description_ja,
+        expected_benefit,
+        expected_benefit_ja,
+        submitter_id,
+        department_id,
+        is_anonymous,
+        attachments,
+        status,
+        handler_level,
+        difficulty
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14, $15)
     RETURNING *
-  `;
+      `;
 
   const values = [
     ideabox_type,
@@ -250,8 +319,8 @@ const createIdea = asyncHandler(async (req, res) => {
 
   // Log history (sync - quick operation)
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'submitted', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+    VALUES($1, 'submitted', $2, $3)`,
     [idea.id, submitter_id, JSON.stringify({ status: 'pending', ideabox_type })]
   );
 
@@ -297,17 +366,10 @@ const createIdea = asyncHandler(async (req, res) => {
   });
 
   // BROADCAST idea_created for real-time updates (WhiteBoxLanding, etc.)
-  const io = req.app.get('io');
-  if (io && io.broadcastIdea) {
-    io.broadcastIdea('idea_created', {
-      id: idea.id,
-      title: idea.title,
-      ideabox_type: idea.ideabox_type,
-      category: idea.category,
-      status: idea.status,
-      created_at: idea.created_at
-    });
-  }
+  // Use helper to broadcast full data with small delay to ensure DB commit
+  setTimeout(() => {
+    fetchAndBroadcastIdea(req.app, idea.id, 'idea_created');
+  }, 100);
 });
 
 /**
@@ -337,24 +399,24 @@ const getIdeas = asyncHandler(async (req, res) => {
     // Admin in chat search: Can see ALL ideas without restrictions
     // Just apply ideabox_type filter if specified
     if (filters.ideabox_type) {
-      conditions.push(`i.ideabox_type = $${paramIndex}`);
+      conditions.push(`i.ideabox_type = $${paramIndex} `);
       params.push(filters.ideabox_type);
       paramIndex++;
     }
   } else if (filters.ideabox_type === 'pink') {
-    conditions.push(`i.ideabox_type = $${paramIndex}`);
+    conditions.push(`i.ideabox_type = $${paramIndex} `);
     params.push(filters.ideabox_type);
     paramIndex++;
 
     if (userLevel > 1) {
       // Non-admin can only see their own pink box ideas
-      conditions.push(`i.submitter_id = $${paramIndex}`);
+      conditions.push(`i.submitter_id = $${paramIndex} `);
       params.push(userId);
       paramIndex++;
     }
     // Admin can see all pink ideas (no additional condition)
   } else if (filters.ideabox_type === 'white') {
-    conditions.push(`i.ideabox_type = $${paramIndex}`);
+    conditions.push(`i.ideabox_type = $${paramIndex} `);
     params.push(filters.ideabox_type);
     paramIndex++;
 
@@ -367,9 +429,9 @@ const getIdeas = asyncHandler(async (req, res) => {
     // Note: handler_level is stored as INTEGER (1=supervisor, 2=manager, 3=general_manager)
 
     let visibilityClause = `(
-      i.status IN ('approved', 'implemented') 
+      i.status IN('approved', 'implemented') 
       OR i.submitter_id = $${paramIndex}
-    `;
+      `;
     params.push(userId);
     paramIndex++;
 
@@ -388,7 +450,7 @@ const getIdeas = asyncHandler(async (req, res) => {
     // - Not a chat search, OR
     // - User is not admin
     // Show only approved/implemented + own ideas
-    conditions.push(`(i.status IN ('approved', 'implemented') OR i.submitter_id = $${paramIndex})`);
+    conditions.push(`(i.status IN('approved', 'implemented') OR i.submitter_id = $${paramIndex})`);
     params.push(userId);
     paramIndex++;
   }
@@ -423,15 +485,15 @@ const getIdeas = asyncHandler(async (req, res) => {
       // Each keyword must appear in at least one field (AND logic for all keywords)
       const keywordConditions = keywords.map((keyword) => {
         const normalizedKeyword = normalizeVietnamese(keyword);
-        const searchPattern = `%${normalizedKeyword}%`;
+        const searchPattern = `% ${normalizedKeyword}% `;
         const condition = `(
-          ${normalizedTitle} LIKE $${paramIndex}
+        ${normalizedTitle} LIKE $${paramIndex}
           OR ${normalizedDesc} LIKE $${paramIndex}
           OR ${normalizedBenefit} LIKE $${paramIndex}
           OR ${titleJa} LIKE $${paramIndex}
           OR ${descJa} LIKE $${paramIndex}
           OR ${benefitJa} LIKE $${paramIndex}
-        )`;
+      )`;
         params.push(searchPattern);
         paramIndex++;
         return condition;
@@ -443,70 +505,70 @@ const getIdeas = asyncHandler(async (req, res) => {
   }
 
   if (filters.status) {
-    conditions.push(`i.status = $${paramIndex}`);
+    conditions.push(`i.status = $${paramIndex} `);
     params.push(filters.status);
     paramIndex++;
   }
 
   if (filters.category) {
-    conditions.push(`i.category = $${paramIndex}`);
+    conditions.push(`i.category = $${paramIndex} `);
     params.push(filters.category);
     paramIndex++;
   }
 
   if (filters.department_id) {
-    conditions.push(`i.department_id = $${paramIndex}`);
+    conditions.push(`i.department_id = $${paramIndex} `);
     params.push(filters.department_id);
     paramIndex++;
   }
 
   if (filters.assigned_to) {
-    conditions.push(`i.assigned_to = $${paramIndex}`);
+    conditions.push(`i.assigned_to = $${paramIndex} `);
     params.push(filters.assigned_to);
     paramIndex++;
   }
 
   if (filters.date_from) {
-    conditions.push(`i.created_at >= $${paramIndex}`);
+    conditions.push(`i.created_at >= $${paramIndex} `);
     params.push(filters.date_from);
     paramIndex++;
   }
 
   if (filters.date_to) {
-    conditions.push(`i.created_at <= $${paramIndex}`);
+    conditions.push(`i.created_at <= $${paramIndex} `);
     params.push(filters.date_to);
     paramIndex++;
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} ` : '';
 
   // Get total count (need alias 'i' to match WHERE conditions)
-  const countQuery = `SELECT COUNT(*) FROM ideas i ${whereClause}`;
+  const countQuery = `SELECT COUNT(*) FROM ideas i ${whereClause} `;
   const countResult = await db.query(countQuery, params);
   const totalItems = parseInt(countResult.rows[0].count);
 
   // Get ideas with pagination
   const query = `
-    SELECT 
-      i.*,
+    SELECT
+    i.*,
       COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
-      COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
-      COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
-      COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
-      CASE 
+        COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
+  COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
+    COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
+    CASE 
         WHEN i.is_anonymous = true AND i.submitter_id != $${paramIndex} AND $${paramIndex + 1} > 1 
         THEN NULL 
-        ELSE u.full_name 
-      END as submitter_name,
-      CASE 
+        ELSE u.full_name
+END as submitter_name,
+  CASE 
         WHEN i.is_anonymous = true AND i.submitter_id != $${paramIndex} AND $${paramIndex + 1} > 1 
         THEN NULL 
-        ELSE u.employee_code 
-      END as submitter_code,
-      d.name as department_name,
-      a.full_name as assigned_to_name,
-      r.full_name as reviewed_by_name,
-      (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $${paramIndex} LIMIT 1) as "satisfactionRating"
+        ELSE u.employee_code
+END as submitter_code,
+  d.name as department_name,
+  a.full_name as assigned_to_name,
+  r.full_name as reviewed_by_name,
+  (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $${paramIndex} LIMIT 1) as "satisfactionRating"
     FROM ideas i
     LEFT JOIN users u ON i.submitter_id = u.id
     LEFT JOIN departments d ON i.department_id = d.id
@@ -515,7 +577,7 @@ const getIdeas = asyncHandler(async (req, res) => {
     ${whereClause}
     ORDER BY ${sort.sortBy} ${sort.sortOrder}
     LIMIT $${paramIndex + 2} OFFSET $${paramIndex + 3}
-  `;
+`;
 
   params.push(userId, userLevel, pagination.limit, pagination.offset);
 
@@ -532,32 +594,32 @@ const getIdeas = asyncHandler(async (req, res) => {
   const ideasWithDetails = await Promise.all(result.rows.map(async (idea) => {
     // Get responses for this idea
     const responsesQuery = `
-      SELECT 
-        r.*,
-        COALESCE(${lang === 'ja' ? 'r.response_ja' : 'NULL'}, r.response) as response,
-        u.full_name as responder_name,
-        u.employee_code,
-        u.role
+SELECT
+r.*,
+  COALESCE(${lang === 'ja' ? 'r.response_ja' : 'NULL'}, r.response) as response,
+  u.full_name as responder_name,
+  u.employee_code,
+  u.role
       FROM idea_responses r
       LEFT JOIN users u ON r.user_id = u.id
       WHERE r.idea_id = $1
       ORDER BY r.created_at ASC
-    `;
+  `;
     const responsesResult = await db.query(responsesQuery, [idea.id]);
 
     // Get history for this idea (only for authorized users)
     let historyResult = { rows: [] };
     if (userLevel <= 4 || idea.submitter_id === userId) {
       const historyQuery = `
-        SELECT 
-          h.*,
-          u.full_name as performed_by_name,
-          u.role
+SELECT
+h.*,
+  u.full_name as performed_by_name,
+  u.role
         FROM idea_history h
         LEFT JOIN users u ON h.performed_by = u.id
         WHERE h.idea_id = $1
         ORDER BY h.created_at DESC
-      `;
+  `;
       historyResult = await db.query(historyQuery, [idea.id]);
     }
 
@@ -591,32 +653,32 @@ const getIdeaById = asyncHandler(async (req, res) => {
   const lang = getLanguageFromRequest(req);
 
   const query = `
-    SELECT 
-      i.*,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
-      COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
-      COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
-      COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
-      CASE 
+SELECT
+i.*,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
+  COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
+  COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
+  COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
+  CASE 
         WHEN i.is_anonymous = true AND i.submitter_id != $2 AND $3 > 1 
         THEN NULL 
-        ELSE u.full_name 
-      END as submitter_name,
-      CASE 
+        ELSE u.full_name
+END as submitter_name,
+  CASE 
         WHEN i.is_anonymous = true AND i.submitter_id != $2 AND $3 > 1 
         THEN NULL 
-        ELSE u.employee_code 
-      END as submitter_code,
-      CASE 
+        ELSE u.employee_code
+END as submitter_code,
+  CASE 
         WHEN i.is_anonymous = true AND i.submitter_id != $2 AND $3 > 1 
         THEN NULL 
-        ELSE u.email 
-      END as submitter_email,
-      d.name as department_name,
-      a.full_name as assigned_to_name,
-      r.full_name as reviewed_by_name,
-      (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $2 LIMIT 1) as "satisfactionRating",
-      (SELECT ir.feedback FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $2 LIMIT 1) as "satisfactionComment"
+        ELSE u.email
+END as submitter_email,
+  d.name as department_name,
+  a.full_name as assigned_to_name,
+  r.full_name as reviewed_by_name,
+  (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $2 LIMIT 1) as "satisfactionRating",
+    (SELECT ir.feedback FROM idea_ratings ir WHERE ir.idea_id = i.id AND ir.rated_by = $2 LIMIT 1) as "satisfactionComment"
     FROM ideas i
     LEFT JOIN users u ON i.submitter_id = u.id
     LEFT JOIN departments d ON i.department_id = d.id
@@ -645,12 +707,12 @@ const getIdeaById = asyncHandler(async (req, res) => {
 
   // Get responses
   const responsesQuery = `
-    SELECT 
-      r.*,
-      COALESCE(${lang === 'ja' ? 'r.response_ja' : 'NULL'}, r.response) as response,
-      u.full_name as responder_name,
-      u.employee_code,
-      u.role
+SELECT
+r.*,
+  COALESCE(${lang === 'ja' ? 'r.response_ja' : 'NULL'}, r.response) as response,
+  u.full_name as responder_name,
+  u.employee_code,
+  u.role
     FROM idea_responses r
     LEFT JOIN users u ON r.user_id = u.id
     WHERE r.idea_id = $1
@@ -663,15 +725,15 @@ const getIdeaById = asyncHandler(async (req, res) => {
   // Get history (only for authorized users)
   if (userLevel <= 4 || idea.submitter_id === userId) {
     const historyQuery = `
-      SELECT 
-        h.*,
-        u.full_name as performed_by_name,
-        u.role
+SELECT
+h.*,
+  u.full_name as performed_by_name,
+  u.role
       FROM idea_history h
       LEFT JOIN users u ON h.performed_by = u.id
       WHERE h.idea_id = $1
       ORDER BY h.created_at DESC
-    `;
+  `;
 
     const historyResult = await db.query(historyQuery, [id]);
     idea.history = historyResult.rows;
@@ -716,24 +778,24 @@ const assignIdea = asyncHandler(async (req, res) => {
   // Update idea
   const query = `
     UPDATE ideas
-    SET 
-      assigned_to = $1,
-      department_id = COALESCE($2, department_id),
-      status = CASE 
+SET
+assigned_to = $1,
+  department_id = COALESCE($2, department_id),
+  status = CASE 
         WHEN status = 'pending' THEN 'under_review'
         ELSE status
-      END,
-      updated_at = CURRENT_TIMESTAMP
+END,
+  updated_at = CURRENT_TIMESTAMP
     WHERE id = $3
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(query, [assigned_to, department_id, id]);
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'assigned', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'assigned', $2, $3)`,
     [id, userId, JSON.stringify({ assigned_to, department_id })]
   );
 
@@ -761,15 +823,12 @@ const assignIdea = asyncHandler(async (req, res) => {
   });
 
   // BROADCAST idea_updated for real-time updates
-  const io = req.app.get('io');
-  if (io && io.broadcastIdea) {
-    io.broadcastIdea('idea_updated', {
-      id: result.rows[0].id,
-      status: result.rows[0].status,
-      assigned_to: result.rows[0].assigned_to,
-      updated_at: result.rows[0].updated_at
+  setImmediate(() => {
+    fetchAndBroadcastIdea(req.app, result.rows[0].id, 'idea_updated', {
+      old_status: oldStatus,
+      new_status: status
     });
-  }
+  });
 });
 
 /**
@@ -809,21 +868,21 @@ const addResponse = asyncHandler(async (req, res) => {
   })) : [];
 
   const query = `
-    INSERT INTO idea_responses (idea_id, user_id, response, response_ja, attachments)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING *
+    INSERT INTO idea_responses(idea_id, user_id, response, response_ja, attachments)
+VALUES($1, $2, $3, $4, $5)
+RETURNING *
   `;
 
   const result = await db.query(query, [id, userId, response, response_ja || null, JSON.stringify(attachments)]);
 
   // Get user info for response
   const responseWithUser = await db.query(`
-    SELECT 
-      r.*,
-      COALESCE(${lang === 'ja' ? 'r.response_ja' : 'NULL'}, r.response) as response,
-      u.full_name as responder_name,
-      u.employee_code,
-      u.role
+SELECT
+r.*,
+  COALESCE(${lang === 'ja' ? 'r.response_ja' : 'NULL'}, r.response) as response,
+  u.full_name as responder_name,
+  u.employee_code,
+  u.role
     FROM idea_responses r
     LEFT JOIN users u ON r.user_id = u.id
     WHERE r.id = $1
@@ -891,17 +950,17 @@ const reviewIdea = asyncHandler(async (req, res) => {
   // Update idea - only update difficulty if explicitly provided
   const query = `
     UPDATE ideas
-    SET 
-      status = $1,
-      review_notes = $2,
-      feasibility_score = $3,
-      impact_score = $4,
-      difficulty = COALESCE($5, difficulty),
-      reviewed_by = $6,
-      reviewed_at = CURRENT_TIMESTAMP,
-      updated_at = CURRENT_TIMESTAMP
+SET
+status = $1,
+  review_notes = $2,
+  feasibility_score = $3,
+  impact_score = $4,
+  difficulty = COALESCE($5, difficulty),
+  reviewed_by = $6,
+  reviewed_at = CURRENT_TIMESTAMP,
+  updated_at = CURRENT_TIMESTAMP
     WHERE id = $7
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(query, [
@@ -931,8 +990,8 @@ const reviewIdea = asyncHandler(async (req, res) => {
   }
 
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'reviewed', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'reviewed', $2, $3)`,
     [id, userId, JSON.stringify(historyDetails)]
   );
 
@@ -959,16 +1018,12 @@ const reviewIdea = asyncHandler(async (req, res) => {
   });
 
   // BROADCAST idea_updated for real-time updates
-  const io = req.app.get('io');
-  if (io && io.broadcastIdea) {
-    io.broadcastIdea('idea_updated', {
-      id: result.rows[0].id,
-      status: result.rows[0].status,
+  setImmediate(() => {
+    fetchAndBroadcastIdea(req.app, result.rows[0].id, 'idea_updated', {
       old_status: oldStatus,
-      new_status: status,
-      updated_at: result.rows[0].updated_at
+      new_status: status
     });
-  }
+  });
 });
 
 /**
@@ -990,23 +1045,23 @@ const implementIdea = asyncHandler(async (req, res) => {
   // Update idea
   const query = `
     UPDATE ideas
-    SET 
-      status = 'implemented',
-      implementation_notes = $1,
-      actual_benefit = $2,
-      actual_benefit_ja = COALESCE($3, actual_benefit_ja),
-      implemented_at = CURRENT_TIMESTAMP,
-      updated_at = CURRENT_TIMESTAMP
+SET
+status = 'implemented',
+  implementation_notes = $1,
+  actual_benefit = $2,
+  actual_benefit_ja = COALESCE($3, actual_benefit_ja),
+  implemented_at = CURRENT_TIMESTAMP,
+  updated_at = CURRENT_TIMESTAMP
     WHERE id = $4
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(query, [implementation_notes, actual_benefit, actual_benefit_ja || null, id]);
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'implemented', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'implemented', $2, $3)`,
     [id, userId, JSON.stringify({ implementation_notes, actual_benefit, actual_benefit_ja: actual_benefit_ja || null })]
   );
 
@@ -1033,14 +1088,9 @@ const implementIdea = asyncHandler(async (req, res) => {
   });
 
   // BROADCAST idea_updated for real-time updates
-  const io = req.app.get('io');
-  if (io && io.broadcastIdea) {
-    io.broadcastIdea('idea_updated', {
-      id: result.rows[0].id,
-      status: 'implemented',
-      updated_at: result.rows[0].updated_at
-    });
-  }
+  setImmediate(() => {
+    fetchAndBroadcastIdea(req.app, result.rows[0].id, 'idea_updated');
+  });
 });
 
 /**
@@ -1055,47 +1105,47 @@ const getIdeaStats = asyncHandler(async (req, res) => {
   let paramIndex = 1;
 
   if (date_from) {
-    conditions.push(`created_at >= $${paramIndex}`);
+    conditions.push(`created_at >= $${paramIndex} `);
     params.push(date_from);
     paramIndex++;
   }
 
   if (date_to) {
-    conditions.push(`created_at <= $${paramIndex}`);
+    conditions.push(`created_at <= $${paramIndex} `);
     params.push(date_to);
     paramIndex++;
   }
 
   if (ideabox_type) {
-    conditions.push(`ideabox_type = $${paramIndex}`);
+    conditions.push(`ideabox_type = $${paramIndex} `);
     params.push(ideabox_type);
     paramIndex++;
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} ` : '';
 
   // Overall stats
   const statsQuery = `
-    SELECT 
-      COUNT(*) as total_ideas,
-      COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-      COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review,
-      COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
-      COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected,
-      COUNT(CASE WHEN status = 'implemented' THEN 1 END) as implemented,
-      AVG(feasibility_score) as avg_feasibility,
-      AVG(impact_score) as avg_impact
+SELECT
+COUNT(*) as total_ideas,
+  COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+  COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review,
+  COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
+  COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected,
+  COUNT(CASE WHEN status = 'implemented' THEN 1 END) as implemented,
+  AVG(feasibility_score) as avg_feasibility,
+  AVG(impact_score) as avg_impact
     FROM ideas
     ${whereClause}
-  `;
+`;
 
   const statsResult = await db.query(statsQuery, params);
 
   // By category
   const byCategoryQuery = `
-    SELECT 
-      category,
-      COUNT(*) as count
+SELECT
+category,
+  COUNT(*) as count
     FROM ideas
     ${whereClause}
     GROUP BY category
@@ -1105,10 +1155,10 @@ const getIdeaStats = asyncHandler(async (req, res) => {
 
   // By ideabox type
   const byTypeQuery = `
-    SELECT 
-      ideabox_type,
-      COUNT(*) as count,
-      COUNT(CASE WHEN status = 'implemented' THEN 1 END) as implemented_count
+SELECT
+ideabox_type,
+  COUNT(*) as count,
+  COUNT(CASE WHEN status = 'implemented' THEN 1 END) as implemented_count
     FROM ideas
     ${whereClause}
     GROUP BY ideabox_type
@@ -1159,26 +1209,26 @@ const escalateIdea = asyncHandler(async (req, res) => {
   const updateQuery = `
     UPDATE ideas
     SET handler_level = $1,
-        status = 'under_review',
-        updated_at = NOW()
+  status = 'under_review',
+  updated_at = NOW()
     WHERE id = $2
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(updateQuery, [nextLevel, id]);
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'escalated', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'escalated', $2, $3)`,
     [id, userId, JSON.stringify({ from_level: idea.handler_level, to_level: nextLevel, reason })]
   );
 
   // Add response about escalation
   await db.query(
-    `INSERT INTO idea_responses (idea_id, user_id, response)
-     VALUES ($1, $2, $3)`,
-    [id, userId, `Escalated to ${nextLevel}. Reason: ${reason || 'No reason provided'}`]
+    `INSERT INTO idea_responses(idea_id, user_id, response)
+VALUES($1, $2, $3)`,
+    [id, userId, `Escalated to ${nextLevel}.Reason: ${reason || 'No reason provided'} `]
   );
 
   // Send notification to users at the escalated level (Manager/GM)
@@ -1187,7 +1237,7 @@ const escalateIdea = asyncHandler(async (req, res) => {
     setImmediate(async () => {
       try {
         await pushNotificationService.sendIdeaCreatedNotification(
-          { ...result.rows[0], title: `[Escalated] ${result.rows[0].title}` },
+          { ...result.rows[0], title: `[Escalated] ${result.rows[0].title} ` },
           req.user.full_name || 'Người xử lý'
         );
       } catch (err) {
@@ -1200,6 +1250,11 @@ const escalateIdea = asyncHandler(async (req, res) => {
     success: true,
     message: `Idea escalated to ${nextLevel} successfully`,
     data: result.rows[0]
+  });
+
+  // BROADCAST idea_updated for real-time updates (Escalation)
+  setImmediate(() => {
+    fetchAndBroadcastIdea(req.app, result.rows[0].id, 'idea_updated');
   });
 });
 
@@ -1218,49 +1273,49 @@ const getKaizenBank = asyncHandler(async (req, res) => {
 
   if (search) {
     conditions.push(`(
-      i.title ILIKE $${paramIndex}
+  i.title ILIKE $${paramIndex}
       OR i.title_ja ILIKE $${paramIndex}
       OR i.description ILIKE $${paramIndex}
       OR i.description_ja ILIKE $${paramIndex}
-    )`);
-    params.push(`%${search}%`);
+)`);
+    params.push(`% ${search}% `);
     paramIndex++;
   }
 
   if (category) {
-    conditions.push(`i.category = $${paramIndex}`);
+    conditions.push(`i.category = $${paramIndex} `);
     params.push(category);
     paramIndex++;
   }
 
   if (filters && filters.ideabox_type) {
-    conditions.push(`i.ideabox_type = $${paramIndex}`);
+    conditions.push(`i.ideabox_type = $${paramIndex} `);
     params.push(filters.ideabox_type);
     paramIndex++;
   }
 
-  const whereClause = `WHERE ${conditions.join(' AND ')}`;
+  const whereClause = `WHERE ${conditions.join(' AND ')} `;
 
   // Get total count
-  const countQuery = `SELECT COUNT(*) FROM ideas i ${whereClause}`;
+  const countQuery = `SELECT COUNT(*) FROM ideas i ${whereClause} `;
   const countResult = await db.query(countQuery, params);
   const totalItems = parseInt(countResult.rows[0].count);
 
   // Get archived ideas
   const query = `
-    SELECT 
-      i.*,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
-      COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
-      COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
-      COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
-      CASE 
+SELECT
+i.*,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
+  COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
+  COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
+  COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
+  CASE 
         WHEN i.is_anonymous = false THEN u.full_name
         ELSE 'Anonymous'
-      END as contributor_name,
-      u.employee_code as contributor_code,
-      d.name as department_name,
-      r.full_name as reviewed_by_name
+END as contributor_name,
+  u.employee_code as contributor_code,
+  d.name as department_name,
+  r.full_name as reviewed_by_name
     FROM ideas i
     LEFT JOIN users u ON i.submitter_id = u.id
     LEFT JOIN departments d ON i.department_id = d.id
@@ -1268,7 +1323,7 @@ const getKaizenBank = asyncHandler(async (req, res) => {
     ${whereClause}
     ORDER BY COALESCE(i.implemented_at, i.updated_at) DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
+`;
 
   params.push(pagination && pagination.limit ? pagination.limit : 20, pagination && pagination.offset ? pagination.offset : 0);
 
@@ -1299,54 +1354,54 @@ const searchKaizenBank = asyncHandler(async (req, res) => {
   }
 
   const conditions = ["status = 'implemented'"];
-  const params = [`%${q}%`];
+  const params = [`% ${q}% `];
   let paramIndex = 2;
 
   if (category) {
-    conditions.push(`category = $${paramIndex}`);
+    conditions.push(`category = $${paramIndex} `);
     params.push(category);
     paramIndex++;
   }
 
   if (date_from) {
-    conditions.push(`implemented_at >= $${paramIndex}`);
+    conditions.push(`implemented_at >= $${paramIndex} `);
     params.push(date_from);
     paramIndex++;
   }
 
   if (date_to) {
-    conditions.push(`implemented_at <= $${paramIndex}`);
+    conditions.push(`implemented_at <= $${paramIndex} `);
     params.push(date_to);
     paramIndex++;
   }
 
-  const whereClause = `WHERE ${conditions.join(' AND ')}`;
+  const whereClause = `WHERE ${conditions.join(' AND ')} `;
 
   const query = `
-    SELECT 
-      i.*,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
-      COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
-      COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
-      COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
-      CASE 
+SELECT
+i.*,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
+  COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
+  COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
+  COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
+  CASE 
         WHEN i.is_anonymous = false THEN u.full_name
         ELSE 'Anonymous'
-      END as contributor_name,
-      ts_rank(
-        to_tsvector('english', 
-          COALESCE(i.title, '') || ' ' || COALESCE(i.title_ja, '') || ' ' ||
-          COALESCE(i.description, '') || ' ' || COALESCE(i.description_ja, '') || ' ' ||
-          COALESCE(i.actual_benefit, '') || ' ' || COALESCE(i.actual_benefit_ja, '') || ' ' ||
-          COALESCE(i.expected_benefit, '') || ' ' || COALESCE(i.expected_benefit_ja, '')
-        ),
-        plainto_tsquery('english', $1)
-      ) as relevance
+END as contributor_name,
+  ts_rank(
+    to_tsvector('english',
+      COALESCE(i.title, '') || ' ' || COALESCE(i.title_ja, '') || ' ' ||
+      COALESCE(i.description, '') || ' ' || COALESCE(i.description_ja, '') || ' ' ||
+      COALESCE(i.actual_benefit, '') || ' ' || COALESCE(i.actual_benefit_ja, '') || ' ' ||
+      COALESCE(i.expected_benefit, '') || ' ' || COALESCE(i.expected_benefit_ja, '')
+    ),
+    plainto_tsquery('english', $1)
+  ) as relevance
     FROM ideas i
     LEFT JOIN users u ON i.submitter_id = u.id
     ${whereClause}
-    AND (
-      i.title ILIKE $1 
+AND(
+  i.title ILIKE $1 
       OR i.title_ja ILIKE $1
       OR i.description ILIKE $1 
       OR i.description_ja ILIKE $1
@@ -1354,7 +1409,7 @@ const searchKaizenBank = asyncHandler(async (req, res) => {
       OR i.actual_benefit_ja ILIKE $1
       OR i.expected_benefit ILIKE $1
       OR i.expected_benefit_ja ILIKE $1
-    )
+)
     ORDER BY relevance DESC, i.implemented_at DESC
     LIMIT 50
   `;
@@ -1374,15 +1429,15 @@ const searchKaizenBank = asyncHandler(async (req, res) => {
  */
 const getIdeaDifficulty = asyncHandler(async (req, res) => {
   const query = `
-    SELECT 
-      CASE 
+SELECT
+CASE 
         WHEN feasibility_score >= 8 THEN 'easy'
         WHEN feasibility_score >= 5 THEN 'medium'
         WHEN feasibility_score >= 3 THEN 'hard'
         ELSE 'very_hard'
-      END as difficulty_level,
-      COUNT(*) as count,
-      AVG(impact_score) as avg_impact
+END as difficulty_level,
+  COUNT(*) as count,
+  AVG(impact_score) as avg_impact
     FROM ideas
     WHERE feasibility_score IS NOT NULL
     GROUP BY difficulty_level
@@ -1392,7 +1447,7 @@ const getIdeaDifficulty = asyncHandler(async (req, res) => {
         WHEN 'medium' THEN 2
         WHEN 'hard' THEN 3
         WHEN 'very_hard' THEN 4
-      END
+END
   `;
 
   const result = await db.query(query);
@@ -1434,26 +1489,26 @@ const getIdeasKanban = asyncHandler(async (req, res) => {
 
   for (const status of statusColumns) {
     const query = `
-      SELECT 
-        i.*,
-        COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
-        COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
-        COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
-        COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
-        CASE 
+SELECT
+i.*,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
+  COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
+  COALESCE(${lang === 'ja' ? 'i.expected_benefit_ja' : 'NULL'}, i.expected_benefit) as expected_benefit,
+  COALESCE(${lang === 'ja' ? 'i.actual_benefit_ja' : 'NULL'}, i.actual_benefit) as actual_benefit,
+  CASE 
           WHEN i.is_anonymous = true AND i.ideabox_type = 'pink' AND $${params.length + 1} > 1
           THEN 'Anonymous'
           ELSE u.full_name
-        END as submitter_name,
-        a.full_name as assigned_to_name,
-        d.name as department_name
+END as submitter_name,
+  a.full_name as assigned_to_name,
+  d.name as department_name
       FROM ideas i
       LEFT JOIN users u ON i.submitter_id = u.id
       LEFT JOIN users a ON i.assigned_to = a.id
       LEFT JOIN departments d ON i.department_id = d.id
       WHERE i.status = '${status}' ${typeFilter}
       ORDER BY i.created_at DESC
-    `;
+  `;
 
     const result = await db.query(query, [...params, userLevel]);
     kanbanData[status] = result.rows;
@@ -1498,18 +1553,18 @@ const getIdeaResponses = asyncHandler(async (req, res) => {
 
   // Get all responses with user information
   const responsesQuery = `
-    SELECT 
-      ir.id,
-      COALESCE(${lang === 'ja' ? 'ir.response_ja' : 'NULL'}, ir.response) as response,
-      ir.response as response_vi,
-      ir.response_ja,
-      ir.attachments,
-      ir.created_at,
-      u.id as user_id,
-      u.full_name as user_name,
-      u.role as user_role,
-      u.level as user_level,
-      d.name as department_name
+SELECT
+ir.id,
+  COALESCE(${lang === 'ja' ? 'ir.response_ja' : 'NULL'}, ir.response) as response,
+  ir.response as response_vi,
+  ir.response_ja,
+  ir.attachments,
+  ir.created_at,
+  u.id as user_id,
+  u.full_name as user_name,
+  u.role as user_role,
+  u.level as user_level,
+  d.name as department_name
     FROM idea_responses ir
     LEFT JOIN users u ON ir.user_id = u.id
     LEFT JOIN departments d ON u.department_id = d.id
@@ -1556,16 +1611,16 @@ const getIdeaHistory = asyncHandler(async (req, res) => {
 
   // Get all history with user information
   const historyQuery = `
-    SELECT 
-      ih.id,
-      ih.action,
-      ih.details,
-      ih.created_at,
-      u.id as user_id,
-      u.full_name as user_name,
-      u.role as user_role,
-      u.level as user_level,
-      d.name as department_name
+SELECT
+ih.id,
+  ih.action,
+  ih.details,
+  ih.created_at,
+  u.id as user_id,
+  u.full_name as user_name,
+  u.role as user_role,
+  u.level as user_level,
+  d.name as department_name
     FROM idea_history ih
     LEFT JOIN users u ON ih.performed_by = u.id
     LEFT JOIN departments d ON u.department_id = d.id
@@ -1598,7 +1653,7 @@ const escalateToNextLevel = asyncHandler(async (req, res) => {
     await notificationService.createNotification({
       type: 'idea_escalated',
       title: 'Idea Escalated to You',
-      message: `An idea has been escalated to ${result.levelName}`,
+      message: `An idea has been escalated to ${result.levelName} `,
       user_id: result.newHandler.id,
       reference_type: 'idea',
       reference_id: id,
@@ -1607,7 +1662,7 @@ const escalateToNextLevel = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: `Idea escalated to ${result.levelName}`,
+    message: `Idea escalated to ${result.levelName} `,
     data: result
   });
 });
@@ -1681,7 +1736,7 @@ const updateDifficultyLevel = asyncHandler(async (req, res) => {
     UPDATE ideas 
     SET difficulty_level = $1, updated_at = CURRENT_TIMESTAMP
     WHERE id = $2
-    RETURNING *
+RETURNING *
   `, [difficulty_level, id]);
 
   if (result.rows.length === 0) {
@@ -1690,8 +1745,8 @@ const updateDifficultyLevel = asyncHandler(async (req, res) => {
 
   // Log history
   await db.query(`
-    INSERT INTO idea_history (idea_id, action, performed_by, details)
-    VALUES ($1, 'difficulty_updated', $2, $3)
+    INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'difficulty_updated', $2, $3)
   `, [id, userId, JSON.stringify({ difficulty_level })]);
 
   res.json({
@@ -1718,19 +1773,19 @@ const getMyIdeas = asyncHandler(async (req, res) => {
   let paramIndex = 2;
 
   if (ideabox_type) {
-    conditions.push(`i.ideabox_type = $${paramIndex}`);
+    conditions.push(`i.ideabox_type = $${paramIndex} `);
     params.push(ideabox_type);
     paramIndex++;
   }
 
   if (status) {
-    conditions.push(`i.status = $${paramIndex}`);
+    conditions.push(`i.status = $${paramIndex} `);
     params.push(status);
     paramIndex++;
   }
 
   if (category) {
-    conditions.push(`i.category = $${paramIndex}`);
+    conditions.push(`i.category = $${paramIndex} `);
     params.push(category);
     paramIndex++;
   }
@@ -1739,7 +1794,7 @@ const getMyIdeas = asyncHandler(async (req, res) => {
 
   // Count total
   const countResult = await db.query(
-    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause}`,
+    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause} `,
     params
   );
   const total = parseInt(countResult.rows[0].count);
@@ -1747,16 +1802,16 @@ const getMyIdeas = asyncHandler(async (req, res) => {
   // Get ideas
   params.push(parseInt(limit), offset);
   const query = `
-    SELECT 
-      i.*,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as display_title,
-      COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as display_description,
-      d.name as department_name,
-      d.name_ja as department_name_ja,
-      a.full_name as assigned_to_name,
-      r.full_name as reviewed_by_name,
-      (SELECT COUNT(*) FROM idea_responses WHERE idea_id = i.id) as response_count,
-      (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id LIMIT 1) as my_rating
+SELECT
+i.*,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as display_title,
+  COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as display_description,
+  d.name as department_name,
+  d.name_ja as department_name_ja,
+  a.full_name as assigned_to_name,
+  r.full_name as reviewed_by_name,
+  (SELECT COUNT(*) FROM idea_responses WHERE idea_id = i.id) as response_count,
+    (SELECT ir.overall_rating FROM idea_ratings ir WHERE ir.idea_id = i.id LIMIT 1) as my_rating
     FROM ideas i
     LEFT JOIN departments d ON i.department_id = d.id
     LEFT JOIN users a ON i.assigned_to = a.id
@@ -1764,21 +1819,21 @@ const getMyIdeas = asyncHandler(async (req, res) => {
     WHERE ${whereClause}
     ORDER BY i.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
+`;
 
   const result = await db.query(query, params);
 
   // Get summary counts
   const summaryResult = await db.query(`
-    SELECT 
-      COUNT(*) as total,
-      COUNT(CASE WHEN ideabox_type = 'white' THEN 1 END) as white_box,
-      COUNT(CASE WHEN ideabox_type = 'pink' THEN 1 END) as pink_box,
-      COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-      COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review,
-      COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
-      COUNT(CASE WHEN status = 'implemented' THEN 1 END) as implemented,
-      COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected
+SELECT
+COUNT(*) as total,
+  COUNT(CASE WHEN ideabox_type = 'white' THEN 1 END) as white_box,
+  COUNT(CASE WHEN ideabox_type = 'pink' THEN 1 END) as pink_box,
+  COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+  COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review,
+  COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved,
+  COUNT(CASE WHEN status = 'implemented' THEN 1 END) as implemented,
+  COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected
     FROM ideas
     WHERE submitter_id = $1
   `, [userId]);
@@ -1844,13 +1899,13 @@ const getIdeasToReview = asyncHandler(async (req, res) => {
   let paramIndex = 1;
 
   if (ideabox_type) {
-    conditions.push(`i.ideabox_type = $${paramIndex}`);
+    conditions.push(`i.ideabox_type = $${paramIndex} `);
     params.push(ideabox_type);
     paramIndex++;
   }
 
   if (category) {
-    conditions.push(`i.category = $${paramIndex}`);
+    conditions.push(`i.category = $${paramIndex} `);
     params.push(category);
     paramIndex++;
   }
@@ -1859,7 +1914,7 @@ const getIdeasToReview = asyncHandler(async (req, res) => {
 
   // Count total
   const countResult = await db.query(
-    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause}`,
+    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause} `,
     params
   );
   const total = parseInt(countResult.rows[0].count);
@@ -1867,12 +1922,12 @@ const getIdeasToReview = asyncHandler(async (req, res) => {
   // Get ideas
   params.push(parseInt(limit), offset);
   const query = `
-    SELECT 
-      i.*,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as display_title,
-      d.name as department_name,
-      CASE WHEN i.is_anonymous THEN NULL ELSE u.full_name END as submitter_name,
-      CASE WHEN i.is_anonymous THEN NULL ELSE u.employee_code END as submitter_code,
+SELECT
+i.*,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as display_title,
+  d.name as department_name,
+  CASE WHEN i.is_anonymous THEN NULL ELSE u.full_name END as submitter_name,
+    CASE WHEN i.is_anonymous THEN NULL ELSE u.employee_code END as submitter_code,
       (SELECT COUNT(*) FROM idea_responses WHERE idea_id = i.id) as response_count
     FROM ideas i
     LEFT JOIN departments d ON i.department_id = d.id
@@ -1880,21 +1935,21 @@ const getIdeasToReview = asyncHandler(async (req, res) => {
     WHERE ${whereClause}
     ORDER BY i.created_at ASC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
+`;
 
   const result = await db.query(query, params);
 
   // Get summary
   const summaryResult = await db.query(`
-    SELECT 
-      COUNT(*) as total,
-      COUNT(CASE WHEN ideabox_type = 'white' THEN 1 END) as white_box,
-      COUNT(CASE WHEN ideabox_type = 'pink' THEN 1 END) as pink_box,
-      COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-      COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review
+SELECT
+COUNT(*) as total,
+  COUNT(CASE WHEN ideabox_type = 'white' THEN 1 END) as white_box,
+  COUNT(CASE WHEN ideabox_type = 'pink' THEN 1 END) as pink_box,
+  COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+  COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review
     FROM ideas i
     WHERE ${whereClause}
-  `, params.slice(0, -2));
+`, params.slice(0, -2));
 
   res.json({
     success: true,
@@ -1934,13 +1989,13 @@ const getIdeasByDepartment = asyncHandler(async (req, res) => {
   if (userLevel > 1) {
     conditions.push("i.ideabox_type = 'white'");
   } else if (ideabox_type) {
-    conditions.push(`i.ideabox_type = $${paramIndex}`);
+    conditions.push(`i.ideabox_type = $${paramIndex} `);
     params.push(ideabox_type);
     paramIndex++;
   }
 
   if (status) {
-    conditions.push(`i.status = $${paramIndex}`);
+    conditions.push(`i.status = $${paramIndex} `);
     params.push(status);
     paramIndex++;
   }
@@ -1949,7 +2004,7 @@ const getIdeasByDepartment = asyncHandler(async (req, res) => {
 
   // Count total
   const countResult = await db.query(
-    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause}`,
+    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause} `,
     params
   );
   const total = parseInt(countResult.rows[0].count);
@@ -1957,12 +2012,12 @@ const getIdeasByDepartment = asyncHandler(async (req, res) => {
   // Get ideas
   params.push(parseInt(limit), offset);
   const query = `
-    SELECT 
-      i.*,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as display_title,
-      d.name as department_name,
-      CASE WHEN i.is_anonymous THEN NULL ELSE u.full_name END as submitter_name,
-      a.full_name as assigned_to_name
+SELECT
+i.*,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as display_title,
+  d.name as department_name,
+  CASE WHEN i.is_anonymous THEN NULL ELSE u.full_name END as submitter_name,
+    a.full_name as assigned_to_name
     FROM ideas i
     LEFT JOIN departments d ON i.department_id = d.id
     LEFT JOIN users u ON i.submitter_id = u.id
@@ -1970,7 +2025,7 @@ const getIdeasByDepartment = asyncHandler(async (req, res) => {
     WHERE ${whereClause}
     ORDER BY i.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
+`;
 
   const result = await db.query(query, params);
 
@@ -2025,25 +2080,25 @@ const forwardToDepartment = asyncHandler(async (req, res) => {
   // Update idea
   const updateQuery = `
     UPDATE ideas
-    SET 
-      status = 'forwarded',
-      coordinator_id = $1,
-      forwarded_to_department_id = $2,
-      forwarded_at = CURRENT_TIMESTAMP,
-      forwarded_by = $1,
-      forwarded_note = $3,
-      forwarded_note_ja = $4,
-      updated_at = CURRENT_TIMESTAMP
+SET
+status = 'forwarded',
+  coordinator_id = $1,
+  forwarded_to_department_id = $2,
+  forwarded_at = CURRENT_TIMESTAMP,
+  forwarded_by = $1,
+  forwarded_note = $3,
+  forwarded_note_ja = $4,
+  updated_at = CURRENT_TIMESTAMP
     WHERE id = $5
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(updateQuery, [userId, department_id, note, note_ja, id]);
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'forwarded', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'forwarded', $2, $3)`,
     [id, userId, JSON.stringify({
       department_id,
       department_name: deptResult.rows[0].name,
@@ -2093,23 +2148,23 @@ const departmentRespond = asyncHandler(async (req, res) => {
   // Update idea
   const updateQuery = `
     UPDATE ideas
-    SET 
-      status = 'department_responded',
-      department_response = $1,
-      department_response_ja = $2,
-      department_responded_by = $3,
-      department_responded_at = CURRENT_TIMESTAMP,
-      updated_at = CURRENT_TIMESTAMP
+SET
+status = 'department_responded',
+  department_response = $1,
+  department_response_ja = $2,
+  department_responded_by = $3,
+  department_responded_at = CURRENT_TIMESTAMP,
+  updated_at = CURRENT_TIMESTAMP
     WHERE id = $4
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(updateQuery, [response, response_ja, userId, id]);
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'department_responded', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'department_responded', $2, $3)`,
     [id, userId, JSON.stringify({ response: response?.substring(0, 100) })]
   );
 
@@ -2137,26 +2192,26 @@ const requestRevision = asyncHandler(async (req, res) => {
   // Update idea
   const updateQuery = `
     UPDATE ideas
-    SET 
-      status = 'need_revision',
-      updated_at = CURRENT_TIMESTAMP
+SET
+status = 'need_revision',
+  updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(updateQuery, [id]);
 
   // Add response as revision request
   await db.query(
-    `INSERT INTO idea_responses (idea_id, user_id, response, response_ja)
-     VALUES ($1, $2, $3, $4)`,
-    [id, userId, `[YÊU CẦU BỔ SUNG] ${revision_note}`, `[修正依頼] ${revision_note_ja || revision_note}`]
+    `INSERT INTO idea_responses(idea_id, user_id, response, response_ja)
+VALUES($1, $2, $3, $4)`,
+    [id, userId, `[YÊU CẦU BỔ SUNG] ${revision_note} `, `[修正依頼] ${revision_note_ja || revision_note} `]
   );
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'revision_requested', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'revision_requested', $2, $3)`,
     [id, userId, JSON.stringify({ note: revision_note })]
   );
 
@@ -2196,24 +2251,24 @@ const publishResponse = asyncHandler(async (req, res) => {
   // Update idea
   const updateQuery = `
     UPDATE ideas
-    SET 
-      status = 'published',
-      published_response = COALESCE($1, department_response),
-      published_response_ja = COALESCE($2, department_response_ja),
-      published_at = CURRENT_TIMESTAMP,
-      published_by = $3,
-      is_published = true,
-      updated_at = CURRENT_TIMESTAMP
+SET
+status = 'published',
+  published_response = COALESCE($1, department_response),
+  published_response_ja = COALESCE($2, department_response_ja),
+  published_at = CURRENT_TIMESTAMP,
+  published_by = $3,
+  is_published = true,
+  updated_at = CURRENT_TIMESTAMP
     WHERE id = $4
-    RETURNING *
+RETURNING *
   `;
 
   const result = await db.query(updateQuery, [published_response, published_response_ja, userId, id]);
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'published', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'published', $2, $3)`,
     [id, userId, JSON.stringify({ published: true })]
   );
 
@@ -2242,18 +2297,18 @@ const getPublishedIdeas = asyncHandler(async (req, res) => {
   let paramIndex = 1;
 
   if (category) {
-    conditions.push(`category = $${paramIndex}`);
+    conditions.push(`category = $${paramIndex} `);
     params.push(category);
     paramIndex++;
   }
 
   if (search) {
     conditions.push(`(
-      title ILIKE $${paramIndex} OR
+  title ILIKE $${paramIndex} OR
       description ILIKE $${paramIndex} OR
       published_response ILIKE $${paramIndex}
-    )`);
-    params.push(`%${search}%`);
+)`);
+    params.push(`% ${search}% `);
     paramIndex++;
   }
 
@@ -2261,7 +2316,7 @@ const getPublishedIdeas = asyncHandler(async (req, res) => {
 
   // Count total
   const countResult = await db.query(
-    `SELECT COUNT(*) FROM ideas WHERE ${whereClause}`,
+    `SELECT COUNT(*) FROM ideas WHERE ${whereClause} `,
     params
   );
   const total = parseInt(countResult.rows[0].count);
@@ -2269,25 +2324,25 @@ const getPublishedIdeas = asyncHandler(async (req, res) => {
   // Get published ideas (HIDE all submitter info)
   params.push(parseInt(limit), offset);
   const query = `
-    SELECT 
-      i.id,
-      i.category,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
-      COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
-      COALESCE(${lang === 'ja' ? 'i.published_response_ja' : 'NULL'}, i.published_response) as response,
-      i.published_at,
-      i.created_at,
-      d.name as resolved_by_department,
-      sl.label_vi as status_label_vi,
-      sl.label_ja as status_label_ja,
-      sl.color as status_color
+SELECT
+i.id,
+  i.category,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
+  COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
+  COALESCE(${lang === 'ja' ? 'i.published_response_ja' : 'NULL'}, i.published_response) as response,
+  i.published_at,
+  i.created_at,
+  d.name as resolved_by_department,
+  sl.label_vi as status_label_vi,
+  sl.label_ja as status_label_ja,
+  sl.color as status_color
     FROM ideas i
     LEFT JOIN departments d ON i.forwarded_to_department_id = d.id
-    LEFT JOIN idea_status_labels sl ON i.status::text = sl.status
+    LEFT JOIN idea_status_labels sl ON i.status:: text = sl.status
     WHERE ${whereClause}
     ORDER BY i.published_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
+`;
 
   const result = await db.query(query, params);
 
@@ -2337,13 +2392,13 @@ const scheduleMeeting = asyncHandler(async (req, res) => {
   const conflictCheck = await db.query(`
     SELECT id FROM room_bookings 
     WHERE room_id = $1 
-    AND status IN ('pending', 'confirmed', 'in_progress')
-    AND (
-      (start_time <= $2 AND end_time > $2) OR
-      (start_time < $3 AND end_time >= $3) OR
+    AND status IN('pending', 'confirmed', 'in_progress')
+AND(
+  (start_time <= $2 AND end_time > $2) OR
+    (start_time < $3 AND end_time >= $3) OR
       (start_time >= $2 AND end_time <= $3)
     )
-  `, [room_id, start_time, end_time]);
+`, [room_id, start_time, end_time]);
 
   if (conflictCheck.rows.length > 0) {
     throw new AppError(
@@ -2354,17 +2409,17 @@ const scheduleMeeting = asyncHandler(async (req, res) => {
 
   // Create room booking
   const meetingTitle = title || (lang === 'ja'
-    ? `意見討議: ${idea.title?.substring(0, 50)}`
-    : `Thảo luận ý kiến: ${idea.title?.substring(0, 50)}`);
+    ? `意見討議: ${idea.title?.substring(0, 50)} `
+    : `Thảo luận ý kiến: ${idea.title?.substring(0, 50)} `);
 
   const bookingQuery = `
-    INSERT INTO room_bookings (
-      room_id, user_id, department_id,
-      title, title_ja, description, purpose,
-      start_time, end_time, expected_attendees,
-      status, related_idea_id, booking_purpose
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 2, 'confirmed', $10, 'idea_discussion')
-    RETURNING *
+    INSERT INTO room_bookings(
+  room_id, user_id, department_id,
+  title, title_ja, description, purpose,
+  start_time, end_time, expected_attendees,
+  status, related_idea_id, booking_purpose
+) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, 2, 'confirmed', $10, 'idea_discussion')
+RETURNING *
   `;
 
   const bookingResult = await db.query(bookingQuery, [
@@ -2373,7 +2428,7 @@ const scheduleMeeting = asyncHandler(async (req, res) => {
     req.user.department_id,
     meetingTitle,
     title_ja || meetingTitle,
-    note || `Thảo luận về ý kiến #${idea.id.substring(0, 8)}`,
+    note || `Thảo luận về ý kiến #${idea.id.substring(0, 8)} `,
     'idea_discussion',
     start_time,
     end_time,
@@ -2390,8 +2445,8 @@ const scheduleMeeting = asyncHandler(async (req, res) => {
 
   // Log history
   await db.query(
-    `INSERT INTO idea_history (idea_id, action, performed_by, details)
-     VALUES ($1, 'meeting_scheduled', $2, $3)`,
+    `INSERT INTO idea_history(idea_id, action, performed_by, details)
+VALUES($1, 'meeting_scheduled', $2, $3)`,
     [id, userId, JSON.stringify({
       booking_id: booking.id,
       room_name: roomResult.rows[0].name,
@@ -2433,13 +2488,13 @@ const getIdeaMeeting = asyncHandler(async (req, res) => {
   const lang = getLanguageFromRequest(req);
 
   const query = `
-    SELECT 
-      rb.*,
-      COALESCE(${lang === 'ja' ? 'r.name_ja' : 'NULL'}, r.name) as room_name,
-      r.code as room_code,
-      r.floor,
-      r.building,
-      u.full_name as booked_by_name
+SELECT
+rb.*,
+  COALESCE(${lang === 'ja' ? 'r.name_ja' : 'NULL'}, r.name) as room_name,
+  r.code as room_code,
+  r.floor,
+  r.building,
+  u.full_name as booked_by_name
     FROM room_bookings rb
     JOIN rooms r ON rb.room_id = r.id
     JOIN users u ON rb.user_id = u.id
@@ -2504,19 +2559,19 @@ const getDepartmentInbox = asyncHandler(async (req, res) => {
   let paramIndex = 2;
 
   if (status) {
-    conditions.push(`i.status = $${paramIndex}`);
+    conditions.push(`i.status = $${paramIndex} `);
     params.push(status);
     paramIndex++;
   } else {
     // Default: show forwarded and need_revision
-    conditions.push(`i.status IN ('forwarded', 'need_revision')`);
+    conditions.push(`i.status IN('forwarded', 'need_revision')`);
   }
 
   const whereClause = conditions.join(' AND ');
 
   // Count
   const countResult = await db.query(
-    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause}`,
+    `SELECT COUNT(*) FROM ideas i WHERE ${whereClause} `,
     params
   );
   const total = parseInt(countResult.rows[0].count);
@@ -2524,26 +2579,26 @@ const getDepartmentInbox = asyncHandler(async (req, res) => {
   // Get ideas (HIDE submitter info as it's Pink Box)
   params.push(parseInt(limit), offset);
   const query = `
-    SELECT 
-      i.id,
-      i.category,
-      COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
-      COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
-      COALESCE(${lang === 'ja' ? 'i.forwarded_note_ja' : 'NULL'}, i.forwarded_note) as coordinator_note,
-      i.status,
-      i.forwarded_at,
-      i.created_at,
-      u.full_name as forwarded_by_name,
-      sl.label_vi as status_label_vi,
-      sl.label_ja as status_label_ja,
-      sl.color as status_color
+SELECT
+i.id,
+  i.category,
+  COALESCE(${lang === 'ja' ? 'i.title_ja' : 'NULL'}, i.title) as title,
+  COALESCE(${lang === 'ja' ? 'i.description_ja' : 'NULL'}, i.description) as description,
+  COALESCE(${lang === 'ja' ? 'i.forwarded_note_ja' : 'NULL'}, i.forwarded_note) as coordinator_note,
+  i.status,
+  i.forwarded_at,
+  i.created_at,
+  u.full_name as forwarded_by_name,
+  sl.label_vi as status_label_vi,
+  sl.label_ja as status_label_ja,
+  sl.color as status_color
     FROM ideas i
     LEFT JOIN users u ON i.forwarded_by = u.id
-    LEFT JOIN idea_status_labels sl ON i.status::text = sl.status
+    LEFT JOIN idea_status_labels sl ON i.status:: text = sl.status
     WHERE ${whereClause}
     ORDER BY i.forwarded_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `;
+`;
 
   const result = await db.query(query, params);
 
