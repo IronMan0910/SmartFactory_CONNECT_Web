@@ -2,7 +2,7 @@
  * useSocket - Custom hook for real-time data updates
  * Simplifies subscribing to channels and handling events with auto-cleanup
  */
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSocketContext, SocketEvent } from '../contexts/SocketContext';
 
 interface UseSocketOptions {
@@ -37,7 +37,10 @@ export function useSocket(options: UseSocketOptions = {}) {
     // Subscribe to channels when connected
     useEffect(() => {
         if (isConnected && autoSubscribe) {
-            channels.forEach(channel => subscribe(channel));
+            channels.forEach(channel => {
+                subscribe(channel);
+                console.log(`[WebSocket] Subscribed to channel: ${channel}`);
+            });
         }
     }, [isConnected, channels, subscribe, autoSubscribe]);
 
@@ -49,8 +52,14 @@ export function useSocket(options: UseSocketOptions = {}) {
         Object.entries(events).forEach(([event, handler]) => {
             if (handler) {
                 const eventName = event as SocketEvent;
-                on(eventName, handler);
-                registeredHandlers.current.set(eventName, handler);
+                // Wrap handler with debug log
+                const wrappedHandler = (data: any) => {
+                    console.log(`[WebSocket] Received event: ${eventName}`, data);
+                    handler(data);
+                };
+                on(eventName, wrappedHandler);
+                registeredHandlers.current.set(eventName, wrappedHandler);
+                console.log(`[WebSocket] Registered handler for: ${eventName}`);
             }
         });
 
@@ -89,10 +98,12 @@ export function useSocketRefresh(
     onRefresh: () => void,
     channels: string[] = []
 ) {
-    const eventHandlers = events.reduce((acc, event) => {
-        acc[event] = onRefresh;
-        return acc;
-    }, {} as Partial<Record<SocketEvent, () => void>>);
+    const eventHandlers = useMemo(() => {
+        return events.reduce((acc, event) => {
+            acc[event] = onRefresh;
+            return acc;
+        }, {} as Partial<Record<SocketEvent, () => void>>);
+    }, [events.join(','), onRefresh]);
 
     return useSocket({
         channels,

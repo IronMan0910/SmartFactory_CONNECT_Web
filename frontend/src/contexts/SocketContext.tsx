@@ -40,7 +40,8 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
             try {
                 const { io } = await import('socket.io-client');
-                const backendUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
+                const backendUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
+                console.log('🔌 Socket init to:', backendUrl, 'Token present:', !!token);
 
                 const newSocket = io(backendUrl, {
                     auth: { token },

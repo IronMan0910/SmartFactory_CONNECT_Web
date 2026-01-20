@@ -23,7 +23,8 @@ import PageMeta from "../../components/common/PageMeta";
 import { useTranslation } from "../../contexts/LanguageContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSpeechToText } from "../../hooks/useSpeechToText";
-import { useSocketRefresh } from "../../hooks/useSocket";
+import { useSocket, useSocketRefresh } from "../../hooks/useSocket";
+import { SocketEvent } from "../../contexts/SocketContext";
 import { useDepartments } from "../../hooks/useDepartments";
 import api from "../../services/api";
 import { toast } from "react-toastify";
@@ -231,9 +232,76 @@ export default function WhiteBoxLanding() {
     fetchData();
   }, [fetchData]);
 
-  useSocketRefresh(["idea_created", "idea_updated", "idea_response"], () => fetchData(false), [
-    "ideas",
-  ]);
+  // Constants defined outside or useMemo to prevent re-renders
+  const socketChannels = useMemo(() => ["ideas"], []);
+
+  // Handlers wrapped in useCallback to be stable
+  const handleIdeaCreated = useCallback((data: any) => {
+    console.log('[Socket] idea_created', data);
+    try {
+      const newItem = mapItem(data);
+      if (ideaCategories.includes(newItem.line)) {
+        setIdeas(prev => {
+          if (prev.some(i => i.id === newItem.id)) return prev;
+          return [newItem, ...prev];
+        });
+        toast.info(language === 'ja' ? '新しいアイデアが投稿されました' : 'Có ý tưởng mới vừa được đăng');
+      } else {
+        setOpinions(prev => {
+          if (prev.some(i => i.id === newItem.id)) return prev;
+          return [newItem, ...prev];
+        });
+        toast.info(language === 'ja' ? '新しい意見が投稿されました' : 'Có ý kiến mới vừa được đăng');
+      }
+    } catch (e) {
+      console.error('Error processing idea_created:', e);
+      fetchData(false);
+    }
+  }, [mapItem, language, fetchData]);
+
+  const handleIdeaUpdated = useCallback((data: any) => {
+    console.log('[Socket] idea_updated', data);
+    try {
+      const updatedItem = mapItem(data);
+      const updateList = (list: PublicIdea[]) =>
+        list.map(item => item.id === updatedItem.id ? { ...item, ...updatedItem } : item);
+
+      setIdeas(prev => updateList(prev));
+      setOpinions(prev => updateList(prev));
+
+      if (selectedIdeaId === updatedItem.id) {
+        // Detail view usually takes data from list find, so this auto-updates
+      }
+    } catch (e) {
+      console.error('Error processing idea_updated:', e);
+      fetchData(false);
+    }
+  }, [mapItem, selectedIdeaId, fetchData]);
+
+  const handleIdeaResponse = useCallback(() => {
+    fetchData(false);
+  }, [fetchData]);
+
+  // Memoize events object
+  const socketEventsHandler = useMemo(() => ({
+    idea_created: handleIdeaCreated,
+    idea_updated: handleIdeaUpdated,
+    idea_response: handleIdeaResponse
+  }), [handleIdeaCreated, handleIdeaUpdated, handleIdeaResponse]);
+
+  // Real-time event handlers
+  const { isConnected, socket } = useSocket({
+    channels: socketChannels,
+    events: socketEventsHandler
+  });
+
+  // Force subscribe logic
+  useEffect(() => {
+    if (isConnected && socket) {
+      console.log('[WhiteBox] Connected. Force subscribing...');
+      socket.emit('subscribe_ideas');
+    }
+  }, [isConnected, socket]);
 
   // Calculate stats
   const stats = useMemo(() => {
