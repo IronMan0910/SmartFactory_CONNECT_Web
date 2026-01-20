@@ -721,7 +721,22 @@ const assignIdea = asyncHandler(async (req, res) => {
     [id, userId, JSON.stringify({ assigned_to, department_id })]
   );
 
-  // TODO: Send notification to assigned user
+  // Send notification to assigned user (WHITE BOX only)
+  if (assigned_to && idea.rows[0].ideabox_type === 'white') {
+    const pushNotificationService = req.app.get('pushNotificationService');
+    if (pushNotificationService) {
+      setImmediate(async () => {
+        try {
+          await pushNotificationService.sendIdeaAssignedNotification(
+            result.rows[0],
+            assigned_to
+          );
+        } catch (err) {
+          console.error('[Idea] Error sending assignment notification:', err.message);
+        }
+      });
+    }
+  }
 
   res.json({
     success: true,

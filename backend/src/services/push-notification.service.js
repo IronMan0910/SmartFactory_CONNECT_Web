@@ -70,8 +70,8 @@ class PushNotificationService {
                 this.notificationService.createNotification({
                     recipient_id: userId,
                     type: 'news',
-                    title: '📰 Tin mới',
-                    title_ja: '📰 新着ニュース',
+                    title: 'Tin mới',
+                    title_ja: '新着ニュース',
                     message: news.title,
                     message_ja: news.title_ja || news.title,
                     reference_type: 'news',
@@ -96,7 +96,7 @@ class PushNotificationService {
             if (fcmTokens.length > 0 && fcmService.isAvailable()) {
                 const fcmResult = await fcmService.sendToMultipleDevices(
                     fcmTokens,
-                    news.is_priority ? '🔴 Tin quan trọng' : '📰 Tin mới',
+                    news.is_priority ? 'Tin quan trọng' : 'Tin mới',
                     news.excerpt || news.title.substring(0, 100),
                     {
                         type: 'news',
@@ -126,7 +126,7 @@ class PushNotificationService {
                 recipientUserIds.forEach(userId => {
                     this.io.to(`user_${userId}`).emit('notification', {
                         type: 'news',
-                        title: '📰 Tin mới',
+                        title: 'Tin mới',
                         message: news.title,
                         news_id: news.id,
                         action_url: `/news/${news.id}`
@@ -207,8 +207,8 @@ class PushNotificationService {
                 this.notificationService.createNotification({
                     recipient_id: userId,
                     type: 'incident',
-                    title: `${priorityEmoji} Incident mới - ${typeLabel}`,
-                    title_ja: `${priorityEmoji} 新規インシデント`,
+                    title: `Incident mới - ${typeLabel}`,
+                    title_ja: `新規インシデント`,
                     message: incident.title || incident.description?.substring(0, 100) || 'Có incident mới cần xử lý',
                     message_ja: incident.title_ja || incident.title || '新規インシデントがあります',
                     reference_type: 'incident',
@@ -234,7 +234,7 @@ class PushNotificationService {
             if (fcmTokens.length > 0 && fcmService.isAvailable()) {
                 const fcmResult = await fcmService.sendToMultipleDevices(
                     fcmTokens,
-                    `${priorityEmoji} Incident mới - ${typeLabel}`,
+                    `Incident mới - ${typeLabel}`,
                     incident.title || incident.description?.substring(0, 80) || 'Có incident mới',
                     {
                         type: 'incident',
@@ -265,7 +265,7 @@ class PushNotificationService {
                 recipientUserIds.forEach(userId => {
                     this.io.to(`user_${userId}`).emit('notification', {
                         type: 'incident',
-                        title: `${priorityEmoji} Incident mới`,
+                        title: `Incident mới`,
                         message: incident.title || 'Có incident mới',
                         incident_id: incident.id,
                         action_url: `/incidents/${incident.id}`
@@ -292,6 +292,112 @@ class PushNotificationService {
     }
 
     /**
+     * Send notification when new idea is created (WHITE BOX ONLY)
+     * @param {Object} idea - Idea object with id, title, ideabox_type
+     * @param {string} submitterName - Name of the submitter
+     */
+    async sendIdeaCreatedNotification(idea, submitterName = 'Nhân viên') {
+        const startTime = Date.now();
+        console.log(`[PushNotification] Sending idea created notification for idea: ${idea.id}`);
+
+        try {
+            // Only notify for WHITE BOX ideas (Pink Box is anonymous - no notification)
+            if (idea.ideabox_type === 'pink' || idea.is_anonymous) {
+                console.log('[PushNotification] Skipping notification for Pink Box (anonymous) idea');
+                return { success: true, recipientCount: 0 };
+            }
+
+            // Get supervisors and above (level <= 4) from submitter's department
+            // If no department, notify all supervisors+
+            let recipientUserIds = [];
+
+            if (idea.department_id) {
+                const usersResult = await db.query(
+                    `SELECT id FROM users 
+                     WHERE (department_id = $1 OR level <= 3) 
+                     AND level <= 4 
+                     AND is_active = true
+                     AND id != $2`,
+                    [idea.department_id, idea.submitter_id]
+                );
+                recipientUserIds = usersResult.rows.map(r => r.id);
+            } else {
+                // No department - notify all supervisors+
+                const usersResult = await db.query(
+                    `SELECT id FROM users 
+                     WHERE level <= 4 
+                     AND is_active = true
+                     AND id != $1`,
+                    [idea.submitter_id]
+                );
+                recipientUserIds = usersResult.rows.map(r => r.id);
+            }
+
+            if (recipientUserIds.length === 0) {
+                console.log('[PushNotification] No supervisors found for idea notification');
+                return { success: true, recipientCount: 0 };
+            }
+
+            const categoryVi = {
+                'process_improvement': 'Cải tiến quy trình',
+                'cost_reduction': 'Giảm chi phí',
+                'safety_enhancement': 'An toàn',
+                'quality_improvement': 'Chất lượng',
+                'general_opinion': 'Ý kiến chung',
+                'other': 'Khác'
+            }[idea.category] || 'Ý kiến';
+
+            // Create in-app notifications for supervisors/managers (Web only - no FCM)
+            const notificationPromises = recipientUserIds.map(userId =>
+                this.notificationService.createNotification({
+                    recipient_id: userId,
+                    type: 'idea',
+                    title: `Ý kiến mới - ${categoryVi}`,
+                    title_ja: '新しいアイデア',
+                    message: `${submitterName} đã gửi: "${idea.title}"`,
+                    message_ja: idea.title_ja ? `「${idea.title_ja}」` : `"${idea.title}"`,
+                    reference_type: 'idea',
+                    reference_id: idea.id,
+                    related_idea_id: idea.id,
+                    action_url: `/ideas/${idea.id}`,
+                    metadata: {
+                        idea_type: idea.ideabox_type,
+                        category: idea.category,
+                        submitter_name: submitterName
+                    }
+                }).catch(err => {
+                    console.error(`[PushNotification] Failed to create notification for user ${userId}:`, err.message);
+                    return null;
+                })
+            );
+
+            await Promise.all(notificationPromises);
+
+            // NOTE: FCM not sent for new ideas - supervisors use Web platform
+            // Socket.io emitted for real-time Web updates only
+            if (this.io) {
+                recipientUserIds.forEach(userId => {
+                    this.io.to(`user_${userId}`).emit('notification', {
+                        type: 'idea_created',
+                        title: `Ý kiến mới - ${categoryVi}`,
+                        message: `${submitterName} đã gửi ý kiến mới`,
+                        idea_id: idea.id,
+                        action_url: `/ideas/${idea.id}`
+                    });
+                });
+            }
+
+            const duration = Date.now() - startTime;
+            console.log(`[PushNotification] Idea created notification completed in ${duration}ms for ${recipientUserIds.length} users`);
+
+            return { success: true, recipientCount: recipientUserIds.length };
+        } catch (error) {
+            console.error('[PushNotification] Error sending idea created notification:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
      * Send notification when idea receives a response
      * @param {Object} idea - Idea object with id, title, submitter_id
      * @param {Object} response - Response object (optional, for context)
@@ -302,6 +408,12 @@ class PushNotificationService {
         console.log(`[PushNotification] Sending idea response notification for idea: ${idea.id}`);
 
         try {
+            // Only notify for WHITE BOX ideas
+            if (idea.ideabox_type === 'pink') {
+                console.log('[PushNotification] Skipping notification for Pink Box idea');
+                return { success: true, recipientCount: 0 };
+            }
+
             // Notify the idea submitter
             const submitterId = idea.submitter_id;
 
@@ -320,8 +432,8 @@ class PushNotificationService {
             await this.notificationService.createNotification({
                 recipient_id: submitterId,
                 type: 'idea',
-                title: '💬 Phản hồi ý kiến của bạn',
-                title_ja: '💬 あなたのアイデアへの返信',
+                title: 'Phản hồi ý kiến của bạn',
+                title_ja: 'あなたのアイデアへの返信',
                 message: `Ý kiến "${idea.title || 'của bạn'}" đã nhận được phản hồi mới`,
                 message_ja: idea.title_ja ? `「${idea.title_ja}」に新しい返信があります` : 'あなたのアイデアに返信がありました',
                 reference_type: 'idea',
@@ -340,7 +452,7 @@ class PushNotificationService {
             if (fcmTokens.length > 0 && fcmService.isAvailable()) {
                 const fcmResult = await fcmService.sendToMultipleDevices(
                     fcmTokens,
-                    '💬 Phản hồi ý kiến của bạn',
+                    'Phản hồi ý kiến của bạn',
                     idea.title ? `"${idea.title}" đã nhận được phản hồi` : 'Ý kiến của bạn đã được phản hồi',
                     {
                         type: 'idea',
@@ -369,7 +481,7 @@ class PushNotificationService {
             if (this.io) {
                 this.io.to(`user_${submitterId}`).emit('notification', {
                     type: 'idea',
-                    title: '💬 Phản hồi ý kiến',
+                    title: 'Phản hồi ý kiến',
                     message: `Ý kiến của bạn đã nhận được phản hồi`,
                     idea_id: idea.id,
                     action_url: `/ideas/${idea.id}`
@@ -408,8 +520,8 @@ class PushNotificationService {
             await this.notificationService.createNotification({
                 recipient_id: assigneeId,
                 type: 'incident',
-                title: `${priorityEmoji} Bạn được gán incident`,
-                title_ja: `${priorityEmoji} インシデントが割り当てられました`,
+                title: `Bạn được gán incident`,
+                title_ja: `インシデントが割り当てられました`,
                 message: incident.title || incident.description?.substring(0, 100) || 'Bạn được gán xử lý incident',
                 message_ja: incident.title_ja || '新しいインシデントが割り当てられました',
                 reference_type: 'incident',
@@ -428,7 +540,7 @@ class PushNotificationService {
             if (fcmTokens.length > 0 && fcmService.isAvailable()) {
                 const fcmResult = await fcmService.sendToMultipleDevices(
                     fcmTokens,
-                    `${priorityEmoji} Bạn được gán incident`,
+                    `Bạn được gán incident`,
                     incident.title || 'Bạn được gán xử lý incident mới',
                     {
                         type: 'incident',
@@ -446,7 +558,7 @@ class PushNotificationService {
             if (this.io) {
                 this.io.to(`user_${assigneeId}`).emit('notification', {
                     type: 'incident_assigned',
-                    title: `${priorityEmoji} Bạn được gán incident`,
+                    title: `Bạn được gán incident`,
                     message: incident.title || 'Có incident mới được gán cho bạn',
                     incident_id: incident.id,
                     action_url: `/incidents/${incident.id}`
@@ -512,8 +624,8 @@ class PushNotificationService {
                 this.notificationService.createNotification({
                     recipient_id: userId,
                     type: 'incident',
-                    title: `📋 Cập nhật incident`,
-                    title_ja: `📋 インシデント更新`,
+                    title: `Cập nhật incident`,
+                    title_ja: `インシデント更新`,
                     message: `Trạng thái: ${statusVi}`,
                     message_ja: `ステータス: ${statusJa}`,
                     reference_type: 'incident',
@@ -538,7 +650,7 @@ class PushNotificationService {
             if (fcmTokens.length > 0 && fcmService.isAvailable()) {
                 await fcmService.sendToMultipleDevices(
                     fcmTokens,
-                    '📋 Cập nhật incident',
+                    'Cập nhật incident',
                     `${incident.title || 'Incident'}: ${statusVi}`,
                     {
                         type: 'incident',
@@ -571,12 +683,18 @@ class PushNotificationService {
         console.log(`[PushNotification] Sending idea assigned notification for idea: ${idea.id} to ${assigneeId}`);
 
         try {
+            // Only notify for WHITE BOX ideas
+            if (idea.ideabox_type === 'pink') {
+                console.log('[PushNotification] Skipping notification for Pink Box idea');
+                return { success: true, recipientCount: 0 };
+            }
+
             // Create in-app notification
             await this.notificationService.createNotification({
                 user_id: assigneeId,
                 type: 'idea_response', // Valid enum value for idea assignment
-                title: '💡 Phân công ý kiến mới',
-                title_ja: '💡 新しいアイデアの割り当て',
+                title: 'Phân công ý kiến mới',
+                title_ja: '新しいアイデアの割り当て',
                 message: `Bạn được phân công xử lý ý kiến: "${idea.title}"`,
                 message_ja: `アイデア「${idea.title_ja || idea.title}」が割り当てられました`,
                 reference_type: 'idea',
@@ -595,7 +713,7 @@ class PushNotificationService {
             if (fcmTokens.length > 0 && fcmService.isAvailable()) {
                 const fcmResult = await fcmService.sendToMultipleDevices(
                     fcmTokens,
-                    '💡 Phân công ý kiến mới',
+                    'Phân công ý kiến mới',
                     'Bạn có ý kiến mới cần xử lý',
                     {
                         type: 'idea',
@@ -613,7 +731,7 @@ class PushNotificationService {
             if (this.io) {
                 this.io.to(`user_${assigneeId}`).emit('notification', {
                     type: 'idea_assigned',
-                    title: '💡 Phân công ý kiến mới',
+                    title: 'Phân công ý kiến mới',
                     message: `Bạn được phân công xử lý ý kiến: "${idea.title}"`,
                     idea_id: idea.id,
                     action_url: `/ideas/${idea.id}`
@@ -640,6 +758,12 @@ class PushNotificationService {
         console.log(`[PushNotification] Sending idea status change notification for idea: ${idea.id}`);
 
         try {
+            // Only notify for WHITE BOX ideas
+            if (idea.ideabox_type === 'pink') {
+                console.log('[PushNotification] Skipping notification for Pink Box idea');
+                return { success: true, recipientCount: 0 };
+            }
+
             const submitterId = idea.submitter_id;
             if (!submitterId) {
                 console.log('[PushNotification] No submitter_id found for idea, skipping notification');
@@ -670,8 +794,8 @@ class PushNotificationService {
             await this.notificationService.createNotification({
                 user_id: submitterId,
                 type: 'idea_reviewed', // Valid enum value for idea status change
-                title: '💡 Cập nhật trạng thái ý kiến',
-                title_ja: '💡 アイデアステータスの更新',
+                title: 'Cập nhật trạng thái ý kiến',
+                title_ja: 'アイデアステータスの更新',
                 message: `Ý kiến "${idea.title}" đã chuyển sang: ${statusVi}`,
                 message_ja: `アイデア「${idea.title_ja || idea.title}」のステータス: ${statusJa}`,
                 reference_type: 'idea',
@@ -690,7 +814,7 @@ class PushNotificationService {
             if (fcmTokens.length > 0 && fcmService.isAvailable()) {
                 const fcmResult = await fcmService.sendToMultipleDevices(
                     fcmTokens,
-                    '💡 Cập nhật trạng thái ý kiến',
+                    'Cập nhật trạng thái ý kiến',
                     `Ý kiến của bạn đã chuyển sang trạng thái: ${statusVi}`,
                     {
                         type: 'idea',
@@ -709,7 +833,7 @@ class PushNotificationService {
             if (this.io) {
                 this.io.to(`user_${submitterId}`).emit('notification', {
                     type: 'idea_status_changed',
-                    title: '💡 Cập nhật trạng thái ý kiến',
+                    title: 'Cập nhật trạng thái ý kiến',
                     message: `Ý kiến của bạn đã chuyển sang trạng thái: ${statusVi}`,
                     idea_id: idea.id,
                     action_url: `/ideas/${idea.id}`,
