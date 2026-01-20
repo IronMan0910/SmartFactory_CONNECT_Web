@@ -1285,4 +1285,36 @@ router.get(
   ideaSupportController.getIdeaWorkflow
 );
 
+/**
+ * @swagger
+ * /api/ideas/{id}:
+ *   delete:
+ *     summary: Delete an idea
+ *     description: Xóa ý tưởng/ý kiến (Admin hoặc người tạo) / アイデアを削除（管理者または作成者）
+ *     tags: [Ideas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Idea deleted successfully
+ *       403:
+ *         description: Not authorized to delete this idea
+ *       404:
+ *         description: Idea not found
+ */
+router.delete(
+  '/:id',
+  authenticate,
+  param('id').isUUID(),
+  validate,
+  ideaController.deleteIdea
+);
+
 module.exports = router;

@@ -22,6 +22,7 @@ import {
 import PageMeta from "../../components/common/PageMeta";
 import api from "../../services/api";
 import { useDepartments } from "../../hooks/useDepartments";
+import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "react-toastify";
 import {
   CURRENT_USER,
@@ -174,6 +175,7 @@ const mapIdeaToMessage = (idea: any): SensitiveMessage => {
 };
 
 export default function SensitiveInboxPageV2() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<SensitiveMessage[]>([]);
   const [selectedMessageId, setSelectedMessageId] = useState<
     string | undefined
@@ -705,6 +707,11 @@ export default function SensitiveInboxPageV2() {
                 onReply={handleReply}
                 onRefresh={() => fetchIdeas(false)}
                 boxType="pink"
+                canDelete={true}
+                onDelete={() => {
+                  setSelectedMessageId(undefined);
+                  fetchIdeas(false);
+                }}
               />
             </div>
 

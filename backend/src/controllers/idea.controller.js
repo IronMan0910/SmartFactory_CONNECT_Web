@@ -2668,6 +2668,97 @@ const toggleLike = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * DELETE /api/ideas/:id
+ * Delete an idea (Admin, Manager or idea owner)
+ */
+const deleteIdea = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  const userLevel = req.user.level || 1;
+
+  console.log(`[DeleteIdea] Request - User: ${userId}, Level: ${userLevel}, IdeaId: ${id}`);
+  console.log(`[DeleteIdea] Full user object:`, JSON.stringify(req.user));
+
+  // Check if idea exists and get submitter info
+  const ideaResult = await db.query(
+    'SELECT id, title, submitter_id, ideabox_type, status FROM ideas WHERE id = $1',
+    [id]
+  );
+
+  if (ideaResult.rows.length === 0) {
+    throw new AppError('Idea not found', 404);
+  }
+
+  const idea = ideaResult.rows[0];
+
+  console.log(`[DeleteIdea] Idea submitter_id: ${idea.submitter_id}`);
+
+  // Authorization: Admin (role or level <= 1), Manager (level <= 2), Supervisor (level <= 3), or the submitter
+  // Note: Lower level number = higher privilege
+  const userRole = req.user.role || '';
+  const isAdmin = userRole === 'admin' || userLevel <= 1;
+  const isManager = userRole === 'manager' || userLevel <= 2;
+  const isSupervisor = userLevel <= 3;
+  const isOwner = idea.submitter_id === userId;
+
+  console.log(`[DeleteIdea] Authorization check - role: ${userRole}, level: ${userLevel}, isAdmin: ${isAdmin}, isManager: ${isManager}, isSupervisor: ${isSupervisor}, isOwner: ${isOwner}`);
+
+  if (!isAdmin && !isManager && !isSupervisor && !isOwner) {
+    console.log(`[DeleteIdea] REJECTED - User ${userId} (level ${userLevel}) cannot delete idea ${id}`);
+    throw new AppError('You are not authorized to delete this idea', 403);
+  }
+
+  // Start transaction to delete all related data
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Delete related data in correct order (foreign key constraints)
+    // Use try-catch for each table in case some don't exist
+    const tablesToDelete = [
+      'idea_likes',
+      'idea_supports', 
+      'idea_responses',
+      'idea_status_transitions',
+      'idea_history'
+    ];
+
+    for (const table of tablesToDelete) {
+      try {
+        await client.query(`DELETE FROM ${table} WHERE idea_id = $1`, [id]);
+      } catch (tableError) {
+        // Table might not exist, continue
+        console.log(`[DeleteIdea] Table ${table} might not exist, skipping`);
+      }
+    }
+    
+    // Finally delete the idea itself
+    await client.query('DELETE FROM ideas WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+
+    console.log(`[DeleteIdea] Idea ${id} deleted by user ${userId} (level ${userLevel})`);
+
+    res.json({
+      success: true,
+      message: 'Idea deleted successfully',
+      message_ja: 'アイデアが正常に削除されました',
+      data: {
+        id: idea.id,
+        title: idea.title,
+        ideabox_type: idea.ideabox_type
+      }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[DeleteIdea] Transaction error:', error);
+    throw new AppError('Failed to delete idea', 500);
+  } finally {
+    client.release();
+  }
+});
+
 // Export all functions at the end
 module.exports = {
   createIdea,
@@ -2710,4 +2801,6 @@ module.exports = {
   getStatusLabels,
   // Feature: Like Idea
   toggleLike,
+  // Delete Idea
+  deleteIdea,
 };

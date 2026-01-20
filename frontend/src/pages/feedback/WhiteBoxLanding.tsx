@@ -764,6 +764,11 @@ export default function WhiteBoxLanding() {
                   departments={departments}
                   onRefresh={() => fetchData(false)}
                   showApproveRejectButtons={false}
+                  canDelete={true}
+                  onDelete={() => {
+                    setSelectedIdeaId(null);
+                    fetchData(false);
+                  }}
                 />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
@@ -786,6 +791,11 @@ export default function WhiteBoxLanding() {
                 departments={departments}
                 onRefresh={() => fetchData(false)}
                 showApproveRejectButtons={false}
+                canDelete={true}
+                onDelete={() => {
+                  setSelectedOpinionId(null);
+                  fetchData(false);
+                }}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">

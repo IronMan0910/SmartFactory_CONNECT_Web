@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { PublicIdea, DifficultyLevel } from "./types";
 import { IdeaHistory } from "./IdeaHistory";
 import { IdeaChat } from "./IdeaChat";
-import { Check, X, ArrowUpRight, Send, Save, Paperclip, User, Building2, ThumbsUp, Bell, Star, MessageSquare } from "lucide-react";
+import { Check, X, ArrowUpRight, Send, Save, Paperclip, User, Building2, ThumbsUp, Bell, Star, MessageSquare, Trash2 } from "lucide-react";
 import { useTranslation } from "../../contexts/LanguageContext";
 import TextArea from "../form/input/TextArea";
 import { DifficultyBadge, DifficultySelector } from "./DifficultySelector";
@@ -35,6 +35,8 @@ interface IdeaDetailProps {
   onSupport?: () => void;
   onRemind?: () => void;
   showApproveRejectButtons?: boolean;
+  onDelete?: () => void;
+  canDelete?: boolean;
 }
 
 export const IdeaDetail: React.FC<IdeaDetailProps> = ({
@@ -49,12 +51,15 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
   onSupport,
   onRemind,
   showApproveRejectButtons = true,
+  onDelete,
+  canDelete = false,
 }) => {
   const { t, language } = useTranslation();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [solutionInput, setSolutionInput] = useState("");
   const [difficulty, setDifficulty] = useState<DifficultyLevel | undefined>(idea.difficulty);
   const [savingDifficulty, setSavingDifficulty] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [solution, setSolution] = useState<{
     note: string;
     status: string;
@@ -149,6 +154,26 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
     onUpdateStatus(t('idea.solution_proposal'), newSolution.note, newSolution.status, changedDifficulty);
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(t('idea.delete_confirm') || 'Bạn có chắc chắn muốn xóa ý tưởng này? Hành động này không thể hoàn tác.')) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      await api.delete(`/ideas/${idea.id}`);
+      toast.success(t('idea.delete_success') || 'Đã xóa thành công');
+      if (onDelete) {
+        onDelete();
+      }
+    } catch (error: any) {
+      console.error('Delete idea error:', error);
+      toast.error(error.response?.data?.message || t('idea.delete_error') || 'Không thể xóa ý tưởng');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleApprove = () => {
     // Bắt buộc chọn độ khó trước khi duyệt
     if (!difficulty) {
@@ -241,6 +266,18 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
               className="px-4 py-2 text-sm border border-gray-200 dark:border-neutral-700 rounded-lg hover:bg-gray-50 dark:hover:bg-neutral-800 flex items-center gap-2 transition-colors text-gray-700 dark:text-gray-300"
             >
               <ArrowUpRight size={16} /> {t('feedback.forward')}
+            </button>
+          )}
+
+          {/* Delete button - Show for Admin/Manager or owner */}
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-4 py-2 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-2 transition-colors disabled:opacity-50"
+              title={t('button.delete') || 'Xóa'}
+            >
+              <Trash2 size={16} /> {deleting ? '...' : t('button.delete') || 'Xóa'}
             </button>
           )}
         </div>

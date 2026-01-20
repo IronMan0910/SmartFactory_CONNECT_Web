@@ -9,6 +9,7 @@ import {
   CornerDownRight,
   Save,
   Bell,
+  Trash2,
 } from "lucide-react";
 import { SensitiveMessage, HistoryAction, DifficultyLevel } from "./types";
 import { ActionPanel } from "./ActionPanel";
@@ -33,6 +34,8 @@ interface MessageDetailViewProps {
   onReply: (messageId: string, content: string, difficulty?: DifficultyLevel) => void;
   onRefresh?: () => void;
   boxType?: 'white' | 'pink';
+  canDelete?: boolean;
+  onDelete?: () => void;
 }
 
 export const MessageDetailView: React.FC<MessageDetailViewProps> = ({
@@ -43,6 +46,8 @@ export const MessageDetailView: React.FC<MessageDetailViewProps> = ({
   onReply,
   onRefresh,
   boxType = 'pink',
+  canDelete = false,
+  onDelete,
 }) => {
   const { t, language } = useTranslation();
   const [activePanel, setActivePanel] = useState<"none" | "forward">("none");
@@ -50,6 +55,7 @@ export const MessageDetailView: React.FC<MessageDetailViewProps> = ({
   const [difficulty, setDifficulty] = useState<DifficultyLevel | undefined>(message?.difficulty);
   const [savingDifficulty, setSavingDifficulty] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Reset difficulty khi chuyển sang message khác
   useEffect(() => {
@@ -59,6 +65,29 @@ export const MessageDetailView: React.FC<MessageDetailViewProps> = ({
   // Check if there's a new department response that hasn't been reviewed
   const hasNewDepartmentResponse = message?.departmentResponse?.department_response &&
     !message?.publishedInfo?.is_published;
+
+  // Handle delete
+  const handleDelete = async () => {
+    if (!message) return;
+    
+    if (!window.confirm(t('idea.delete_confirm') || 'Bạn có chắc chắn muốn xóa nội dung này? Hành động này không thể hoàn tác.')) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      await api.delete(`/ideas/${message.id}`);
+      toast.success(t('idea.delete_success') || 'Đã xóa thành công');
+      if (onDelete) {
+        onDelete();
+      }
+    } catch (error: any) {
+      console.error('Delete message error:', error);
+      toast.error(error.response?.data?.message || t('idea.delete_error') || 'Không thể xóa');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Handle status change from StatusWorkflowPanel
   const handleStatusChange = async (newStatus: string, note?: string) => {
@@ -228,6 +257,17 @@ export const MessageDetailView: React.FC<MessageDetailViewProps> = ({
           >
             <Send size={14} /> {t('feedback.forward')}
           </button>
+          {/* Delete button */}
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              title={t('button.delete') || 'Xóa'}
+            >
+              <Trash2 size={14} /> {deleting ? '...' : t('button.delete') || 'Xóa'}
+            </button>
+          )}
         </div>
       </header>
 
