@@ -834,6 +834,7 @@ VALUES($1, 'assigned', $2, $3)`,
 /**
  * Add response to idea
  * POST /api/ideas/:id/responses
+ * All authenticated users can add responses/comments to ideas
  */
 const addResponse = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -848,15 +849,9 @@ const addResponse = asyncHandler(async (req, res) => {
     throw new AppError('Idea not found', 404);
   }
 
-  // Check permission: submitter, assigned user, department manager, or supervisor+
-  const canRespond =
-    idea.rows[0].submitter_id === userId ||
-    idea.rows[0].assigned_to === userId ||
-    req.user.level <= 4;
-
-  if (!canRespond) {
-    throw new AppError('You do not have permission to respond to this idea', 403);
-  }
+  // All authenticated users can respond/comment on ideas
+  // This encourages discussion and collaboration
+  // Note: Anonymous Pink Box ideas still hide submitter info in responses
 
   // Handle attachments
   const attachments = req.files ? req.files.map(file => ({

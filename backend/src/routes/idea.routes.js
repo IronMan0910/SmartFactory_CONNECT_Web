@@ -492,8 +492,8 @@ router.put(
 
 /**
  * @route   POST /api/ideas/:id/responses
- * @desc    Add response to idea
- * @access  Private (Assigned user or Supervisor+)
+ * @desc    Add response/comment to idea
+ * @access  Private (All authenticated users can comment)
  */
 router.post(
   '/:id/responses',

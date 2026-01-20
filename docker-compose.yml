@@ -256,10 +256,11 @@ services:
         reservations:
           cpus: '0.25'
           memory: 512M
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+          # GPU support (uncomment if NVIDIA GPU available)
+          # devices:
+          #   - driver: nvidia
+          #     count: 1
+          #     capabilities: [gpu]
 
 # ========== CLOUDFLARE TUNNEL ==========
   # Exposes services to public internet via Cloudflare Zero Trust

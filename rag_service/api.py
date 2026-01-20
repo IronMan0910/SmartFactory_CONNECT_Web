@@ -178,7 +178,13 @@ async def check_duplicate_idea(request: CheckDuplicateRequest):
         # Default thresholds
         idea_threshold = float(settings.get('whitebox_idea_similarity_threshold', '0.60'))
         opinion_threshold = float(settings.get('whitebox_opinion_similarity_threshold', '0.90'))
-        allow_confirmation = settings.get('allow_duplicate_with_confirmation', 'true').lower() == 'true'
+        
+        # Handle allow_confirmation - can be string or boolean
+        allow_conf_value = settings.get('allow_duplicate_with_confirmation', 'true')
+        if isinstance(allow_conf_value, bool):
+            allow_confirmation = allow_conf_value
+        else:
+            allow_confirmation = str(allow_conf_value).lower() == 'true'
         
         # Determine threshold based on subtype
         threshold = idea_threshold if request.whitebox_subtype == 'idea' else opinion_threshold
@@ -639,6 +645,145 @@ async def update_rag_settings(request: RAGSettingsRequest):
         current_samples=current,
         recommendation=rec
     )
+
+
+# === Ideas Embedding Management ===
+
+class GenerateIdeasEmbeddingResponse(BaseModel):
+    """Response cho generate ideas embeddings"""
+    success: bool
+    processed: int
+    failed: int
+    total_without_embedding: int
+    message: str
+
+
+@app.post("/ideas/generate-embeddings", response_model=GenerateIdeasEmbeddingResponse, tags=["Ideas"])
+async def generate_ideas_embeddings(limit: int = Query(100, ge=1, le=1000)):
+    """
+    Generate embeddings cho cac ideas chua co embedding.
+    Nen chay sau khi them ideas moi vao database.
+    """
+    try:
+        # Count ideas without embedding
+        with db.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM ideas WHERE embedding IS NULL")
+            total_without = cur.fetchone()['count']
+        
+        if total_without == 0:
+            return GenerateIdeasEmbeddingResponse(
+                success=True,
+                processed=0,
+                failed=0,
+                total_without_embedding=0,
+                message="Tat ca ideas da co embedding"
+            )
+        
+        # Get ideas without embedding
+        with db.cursor() as cur:
+            cur.execute("""
+                SELECT id, title, description, expected_benefit
+                FROM ideas 
+                WHERE embedding IS NULL
+                LIMIT %s
+            """, (limit,))
+            ideas = cur.fetchall()
+        
+        processed = 0
+        failed = 0
+        
+        for idea in ideas:
+            try:
+                # Combine text fields for embedding
+                text_parts = []
+                if idea['title']:
+                    text_parts.append(idea['title'])
+                if idea['description']:
+                    text_parts.append(idea['description'])
+                if idea['expected_benefit']:
+                    text_parts.append(idea['expected_benefit'])
+                
+                combined_text = ' '.join(text_parts)
+                
+                if len(combined_text) < 10:
+                    failed += 1
+                    continue
+                
+                # Generate embedding
+                embedding = embedding_service.encode(combined_text)
+                
+                # Save to database
+                with db.cursor() as cur:
+                    cur.execute("""
+                        UPDATE ideas 
+                        SET embedding = %s::vector
+                        WHERE id = %s
+                    """, (embedding.tolist(), idea['id']))
+                
+                processed += 1
+                
+            except Exception as e:
+                print(f"[ERROR] Failed to process idea {idea['id']}: {e}")
+                failed += 1
+        
+        remaining = total_without - processed - failed
+        message = f"Da xu ly {processed} ideas."
+        if failed > 0:
+            message += f" {failed} that bai."
+        if remaining > 0:
+            message += f" Con {remaining} ideas can xu ly."
+        
+        return GenerateIdeasEmbeddingResponse(
+            success=True,
+            processed=processed,
+            failed=failed,
+            total_without_embedding=remaining,
+            message=message
+        )
+        
+    except Exception as e:
+        print(f"[ERROR] Generate ideas embeddings failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ideas/embedding-stats", tags=["Ideas"])
+async def get_ideas_embedding_stats():
+    """
+    Thong ke embeddings cho ideas.
+    """
+    try:
+        with db.cursor() as cur:
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(embedding) as with_embedding,
+                    COUNT(*) - COUNT(embedding) as without_embedding,
+                    COUNT(*) FILTER (WHERE ideabox_type = 'white') as white_box,
+                    COUNT(*) FILTER (WHERE ideabox_type = 'pink') as pink_box,
+                    COUNT(*) FILTER (WHERE whitebox_subtype = 'idea') as ideas,
+                    COUNT(*) FILTER (WHERE whitebox_subtype = 'opinion') as opinions
+                FROM ideas
+            """)
+            stats = cur.fetchone()
+        
+        return {
+            "success": True,
+            "stats": {
+                "total": stats['total'],
+                "with_embedding": stats['with_embedding'],
+                "without_embedding": stats['without_embedding'],
+                "percentage": round(stats['with_embedding'] * 100 / stats['total'], 1) if stats['total'] > 0 else 0,
+                "by_type": {
+                    "white_box": stats['white_box'],
+                    "pink_box": stats['pink_box'],
+                    "ideas": stats['ideas'],
+                    "opinions": stats['opinions']
+                }
+            }
+        }
+    except Exception as e:
+        print(f"[ERROR] Get ideas embedding stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # === Startup/Shutdown ===
