@@ -295,6 +295,19 @@ const createIdea = asyncHandler(async (req, res) => {
     message: 'Idea submitted successfully',
     data: idea
   });
+
+  // BROADCAST idea_created for real-time updates (WhiteBoxLanding, etc.)
+  const io = req.app.get('io');
+  if (io && io.broadcastIdea) {
+    io.broadcastIdea('idea_created', {
+      id: idea.id,
+      title: idea.title,
+      ideabox_type: idea.ideabox_type,
+      category: idea.category,
+      status: idea.status,
+      created_at: idea.created_at
+    });
+  }
 });
 
 /**
@@ -743,6 +756,17 @@ const assignIdea = asyncHandler(async (req, res) => {
     message: 'Idea assigned successfully',
     data: result.rows[0]
   });
+
+  // BROADCAST idea_updated for real-time updates
+  const io = req.app.get('io');
+  if (io && io.broadcastIdea) {
+    io.broadcastIdea('idea_updated', {
+      id: result.rows[0].id,
+      status: result.rows[0].status,
+      assigned_to: result.rows[0].assigned_to,
+      updated_at: result.rows[0].updated_at
+    });
+  }
 });
 
 /**
@@ -831,6 +855,16 @@ const addResponse = asyncHandler(async (req, res) => {
     message: 'Response added successfully',
     data: responseWithUser.rows[0]
   });
+
+  // BROADCAST idea_response for real-time updates
+  const io = req.app.get('io');
+  if (io && io.broadcastIdea) {
+    io.broadcastIdea('idea_response', {
+      idea_id: id,
+      response_id: result.rows[0].id,
+      updated_at: result.rows[0].created_at
+    });
+  }
 });
 
 /**
@@ -920,6 +954,18 @@ const reviewIdea = asyncHandler(async (req, res) => {
     message: 'Idea reviewed successfully',
     data: result.rows[0]
   });
+
+  // BROADCAST idea_updated for real-time updates
+  const io = req.app.get('io');
+  if (io && io.broadcastIdea) {
+    io.broadcastIdea('idea_updated', {
+      id: result.rows[0].id,
+      status: result.rows[0].status,
+      old_status: oldStatus,
+      new_status: status,
+      updated_at: result.rows[0].updated_at
+    });
+  }
 });
 
 /**
@@ -982,6 +1028,16 @@ const implementIdea = asyncHandler(async (req, res) => {
     message: 'Idea marked as implemented successfully',
     data: result.rows[0]
   });
+
+  // BROADCAST idea_updated for real-time updates
+  const io = req.app.get('io');
+  if (io && io.broadcastIdea) {
+    io.broadcastIdea('idea_updated', {
+      id: result.rows[0].id,
+      status: 'implemented',
+      updated_at: result.rows[0].updated_at
+    });
+  }
 });
 
 /**

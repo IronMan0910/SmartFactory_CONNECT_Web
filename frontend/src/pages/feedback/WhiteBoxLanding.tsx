@@ -227,7 +227,7 @@ export default function WhiteBoxLanding() {
     fetchData();
   }, [fetchData]);
 
-  useSocketRefresh(["idea_created", "idea_updated"], () => fetchData(false), [
+  useSocketRefresh(["idea_created", "idea_updated", "idea_response"], () => fetchData(false), [
     "ideas",
   ]);
 

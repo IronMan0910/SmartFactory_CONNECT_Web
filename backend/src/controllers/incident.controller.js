@@ -619,6 +619,17 @@ const updateIncidentStatus = asyncHandler(async (req, res) => {
     message: 'Incident status updated successfully',
     data: result.rows[0]
   });
+
+  // BROADCAST incident_updated for real-time updates
+  const io = req.app.get('io');
+  if (io && io.broadcastIncident) {
+    io.broadcastIncident('incident_updated', {
+      id: result.rows[0].id,
+      status: result.rows[0].status,
+      old_status: oldStatus,
+      updated_at: result.rows[0].updated_at
+    });
+  }
 });
 
 /**
@@ -1612,34 +1623,34 @@ const getMyIncidents = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { status, priority, limit = 20, page = 1 } = req.query;
   const lang = getLanguageFromRequest(req);
-  
+
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  
+
   const conditions = ['i.reporter_id = $1'];
   const params = [userId];
   let paramIndex = 2;
-  
+
   if (status) {
     conditions.push(`i.status = $${paramIndex}`);
     params.push(status);
     paramIndex++;
   }
-  
+
   if (priority) {
     conditions.push(`i.priority = $${paramIndex}`);
     params.push(priority);
     paramIndex++;
   }
-  
+
   const whereClause = conditions.join(' AND ');
-  
+
   // Count total
   const countResult = await db.query(
     `SELECT COUNT(*) FROM incidents i WHERE ${whereClause}`,
     params
   );
   const total = parseInt(countResult.rows[0].count);
-  
+
   // Get incidents
   params.push(parseInt(limit), offset);
   const query = `
@@ -1660,9 +1671,9 @@ const getMyIncidents = asyncHandler(async (req, res) => {
     ORDER BY i.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
-  
+
   const result = await db.query(query, params);
-  
+
   // Get summary counts
   const summaryResult = await db.query(`
     SELECT 
@@ -1675,7 +1686,7 @@ const getMyIncidents = asyncHandler(async (req, res) => {
     FROM incidents
     WHERE reporter_id = $1
   `, [userId]);
-  
+
   res.json({
     success: true,
     data: result.rows,
@@ -1699,7 +1710,7 @@ const getAssignedToMe = asyncHandler(async (req, res) => {
   const userLevel = req.user.level;
   const { status, priority, limit = 20, page = 1 } = req.query;
   const lang = getLanguageFromRequest(req);
-  
+
   // Only Level 4 and above can have assigned incidents
   if (userLevel > 4) {
     return res.json({
@@ -1709,34 +1720,34 @@ const getAssignedToMe = asyncHandler(async (req, res) => {
       pagination: { page: 1, limit: parseInt(limit), total: 0, total_pages: 0 }
     });
   }
-  
+
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  
+
   const conditions = ['i.assigned_to = $1'];
   const params = [userId];
   let paramIndex = 2;
-  
+
   if (status) {
     conditions.push(`i.status = $${paramIndex}`);
     params.push(status);
     paramIndex++;
   }
-  
+
   if (priority) {
     conditions.push(`i.priority = $${paramIndex}`);
     params.push(priority);
     paramIndex++;
   }
-  
+
   const whereClause = conditions.join(' AND ');
-  
+
   // Count total
   const countResult = await db.query(
     `SELECT COUNT(*) FROM incidents i WHERE ${whereClause}`,
     params
   );
   const total = parseInt(countResult.rows[0].count);
-  
+
   // Get incidents
   params.push(parseInt(limit), offset);
   const query = `
@@ -1761,9 +1772,9 @@ const getAssignedToMe = asyncHandler(async (req, res) => {
       i.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
-  
+
   const result = await db.query(query, params);
-  
+
   // Get summary counts
   const summaryResult = await db.query(`
     SELECT 
@@ -1775,7 +1786,7 @@ const getAssignedToMe = asyncHandler(async (req, res) => {
     FROM incidents
     WHERE assigned_to = $1
   `, [userId]);
-  
+
   res.json({
     success: true,
     data: result.rows,
@@ -1798,39 +1809,39 @@ const getIncidentsByDepartment = asyncHandler(async (req, res) => {
   const userLevel = req.user.level;
   const { status, priority, limit = 20, page = 1 } = req.query;
   const lang = getLanguageFromRequest(req);
-  
+
   // Check permission
   if (userLevel > 3) {
     throw new AppError('Permission denied', 403);
   }
-  
+
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  
+
   const conditions = ['(i.department_id = $1 OR i.assigned_department_id = $1)'];
   const params = [departmentId];
   let paramIndex = 2;
-  
+
   if (status) {
     conditions.push(`i.status = $${paramIndex}`);
     params.push(status);
     paramIndex++;
   }
-  
+
   if (priority) {
     conditions.push(`i.priority = $${paramIndex}`);
     params.push(priority);
     paramIndex++;
   }
-  
+
   const whereClause = conditions.join(' AND ');
-  
+
   // Count total
   const countResult = await db.query(
     `SELECT COUNT(*) FROM incidents i WHERE ${whereClause}`,
     params
   );
   const total = parseInt(countResult.rows[0].count);
-  
+
   // Get incidents
   params.push(parseInt(limit), offset);
   const query = `
@@ -1848,9 +1859,9 @@ const getIncidentsByDepartment = asyncHandler(async (req, res) => {
     ORDER BY i.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
-  
+
   const result = await db.query(query, params);
-  
+
   res.json({
     success: true,
     data: result.rows,
@@ -1871,7 +1882,7 @@ const getIncidentsByDepartment = asyncHandler(async (req, res) => {
 const getIncidentHistory = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const lang = getLanguageFromRequest(req);
-  
+
   // Get history records
   const historyResult = await db.query(`
     SELECT 
@@ -1883,7 +1894,7 @@ const getIncidentHistory = asyncHandler(async (req, res) => {
     WHERE h.incident_id = $1
     ORDER BY h.created_at DESC
   `, [id]);
-  
+
   // Format history items
   const history = historyResult.rows.map(item => ({
     id: item.id,
@@ -1894,7 +1905,7 @@ const getIncidentHistory = asyncHandler(async (req, res) => {
     performed_by_role: item.performed_by_role,
     created_at: item.created_at
   }));
-  
+
   res.json({
     success: true,
     data: history
@@ -1916,7 +1927,7 @@ function getActionLabel(action, lang) {
     rated: { vi: 'Đánh giá', ja: '評価' },
     department_assigned: { vi: 'Giao phòng ban', ja: '部門割り当て' }
   };
-  
+
   return labels[action]?.[lang] || labels[action]?.vi || action;
 }
 
@@ -1929,14 +1940,14 @@ const getIncidentComments = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { page = 1, limit = 20 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  
+
   // Count total
   const countResult = await db.query(
     'SELECT COUNT(*) FROM incident_comments WHERE incident_id = $1',
     [id]
   );
   const total = parseInt(countResult.rows[0].count);
-  
+
   // Get comments
   const result = await db.query(`
     SELECT 
@@ -1950,7 +1961,7 @@ const getIncidentComments = asyncHandler(async (req, res) => {
     ORDER BY c.created_at ASC
     LIMIT $2 OFFSET $3
   `, [id, parseInt(limit), offset]);
-  
+
   res.json({
     success: true,
     data: result.rows,
