@@ -410,11 +410,15 @@ export default function WhiteBoxLanding() {
         toast.success(language === "ja" ? "転送しました" : "Đã chuyển tiếp");
         return;
       }
-      await api.put(`/ideas/${item.id}/review`, {
+      // Build payload - only include difficulty if it has a value
+      const payload: { status: string; review_notes?: string; difficulty?: string } = {
         status: mapToBackendStatus(status),
         review_notes: note,
-        difficulty,
-      });
+      };
+      if (difficulty) {
+        payload.difficulty = difficulty;
+      }
+      await api.put(`/ideas/${item.id}/review`, payload);
       fetchData(false);
       toast.success(
         language === "ja" ? "更新しました" : "Cập nhật thành công"
