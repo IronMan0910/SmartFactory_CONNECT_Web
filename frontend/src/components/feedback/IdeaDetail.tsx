@@ -165,9 +165,9 @@ export const IdeaDetail: React.FC<IdeaDetailProps> = ({
     };
     setSolution(newSolution);
     setSolutionInput("");
-    // Chỉ gửi difficulty nếu nó khác với giá trị ban đầu
-    const changedDifficulty = difficulty !== idea.difficulty ? difficulty : undefined;
-    onUpdateStatus(t('idea.solution_proposal'), newSolution.note, newSolution.status, changedDifficulty);
+    // Gửi status 'under_review' để giữ nguyên trạng thái, chỉ thêm ghi chú
+    // Difficulty được gửi kèm nếu có
+    onUpdateStatus('under_review', newSolution.note, newSolution.status, difficulty);
   };
 
   const handleDeleteClick = () => {
